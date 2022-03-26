@@ -1,0 +1,207 @@
+import shutil
+from pathlib import Path
+
+transformers_path = Path("/opt/conda/lib/python3.7/site-packages/transformers")
+
+input_dir = Path("../src/deberta-v2-3-fast-tokenizer")
+
+convert_file = input_dir / "convert_slow_tokenizer.py"
+conversion_path = transformers_path/convert_file.name
+
+if conversion_path.exists():
+    conversion_path.unlink()
+
+shutil.copy(convert_file, transformers_path)
+deberta_v2_path = transformers_path / "models" / "deberta_v2"
+
+for filename in ['tokenization_deberta_v2.py', 'tokenization_deberta_v2_fast.py']:
+    filepath = deberta_v2_path/filename
+    if filepath.exists():
+        filepath.unlink()
+
+    shutil.copy(input_dir/filename, filepath)
+
+import gc
+gc.enable()
+
+import sys
+import argparse
+import os
+import random
+import warnings
+import logging
+import time
+
+import numpy as np
+import pandas as pd
+import tez
+import torch
+import torch.nn as nn
+import bitsandbytes as bnb
+import pytorch_lightning as pl
+
+from tqdm import tqdm
+from math import ceil
+from tez import enums
+from copy import deepcopy
+from sklearn import metrics
+from torch.nn.parameter import Parameter
+from torch.utils.data import DataLoader
+from torch.nn import functional as F
+from torch.optim.lr_scheduler import StepLR, LinearLR
+from transformers import AdamW, AutoConfig, AutoModel, AutoTokenizer, get_cosine_schedule_with_warmup
+from transformers.models.deberta_v2.tokenization_deberta_v2_fast import DebertaV2TokenizerFast
+from pytorchcrf import CRF
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
+
+
+from utils import EarlyStopping, prepare_training_data, target_id_map, id_target_map, span_target_id_map, span_id_target_map, GradualWarmupScheduler, ReduceLROnPlateau, span_decode
+from utils import biaffine_decode, Freeze
+from model.model import NBMEModel
+from data.dataset import TrainDataset
+from loss.dice_loss import DiceLoss
+from loss.focal_loss import FocalLoss
+from loss.sce import SCELoss
+
+
+warnings.filterwarnings("ignore")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fold", type=int, required=True)
+    parser.add_argument("--seed", type=int, default=43, required=False)
+    parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--trans_lr", type=float, required=True)
+    parser.add_argument("--dynamic_merge_layers", action="store_true", required=False)
+    parser.add_argument("--merge_layers_num", type=int, default=-2, required=False)
+    parser.add_argument("--finetune", action="store_true", required=False)
+    parser.add_argument("--output", type=str, default="../model", required=False)
+    parser.add_argument("--input_csv", type=str, default="", required=True)
+    parser.add_argument("--ckpt", type=str, default="", required=False)
+    parser.add_argument("--max_len", type=int, default=510, required=False)
+    parser.add_argument("--batch_size", type=int, default=8, required=False)
+    parser.add_argument("--valid_batch_size", type=int, default=8, required=False)
+    parser.add_argument("--epochs", type=int, default=20, required=False)
+    parser.add_argument("--accumulation_steps", type=int, default=1, required=False)
+    parser.add_argument("--loss", type=str, default="ce", required=False)
+    parser.add_argument("--label_smooth", type=float, default=0.0, required=False)
+    parser.add_argument("--warmup_ratio", type=float, default=0.05, required=False)
+    parser.add_argument("--sce_alpha", type=float, required=False)
+    parser.add_argument("--sce_beta", type=float, required=False)
+    parser.add_argument("--decoder", type=str, default="softmax", required=False)
+    parser.add_argument("--freeze", type=int, default=10, required=False)
+    parser.add_argument("--freeze_method", type=str, default="hard", required=False)
+    parser.add_argument("--lower_freeze", type=float, default=0., required=False)
+    parser.add_argument("--gradient_ckpt", action="store_true", required=False)
+    parser.add_argument("--clip_grad_norm", type=float, default=1.0, required=False)
+    
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    NUM_JOBS = 2
+    args = parse_args()
+    pl.seed_everything(seed=args.seed, workers=True)
+    os.makedirs(args.output, exist_ok=True)
+    df = pd.read_csv(args.input_csv)
+
+    train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
+    valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
+    
+    
+    if args.model in ["microsoft/deberta-v3-large", "microsoft/deberta-v2-xlarge"]:
+        tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        
+    tokenizer.add_tokens("\n", special_tokens=True)
+        
+    train_dataset = DataLoader(
+            TrainDataset(tokenizer, args.max_len, train_df),
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=4,
+            pin_memory=True,
+            )
+    valid_dataset = DataLoader(
+            TrainDataset(tokenizer, args.max_len, valid_df),
+            batch_size=args.valid_batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True,
+            )
+
+    num_train_steps = int(len(train_dataset) / args.batch_size / args.accumulation_steps * args.epochs)
+    
+    num_labels = 2
+    span_num_labels = 2
+    model = NBMEModel(
+        max_len=args.max_len,
+        model_name=args.model,
+        num_train_steps=num_train_steps,
+        transformer_learning_rate=args.trans_lr,
+        other_learning_rate=args.other_lr,
+        dynamic_merge_layers=args.dynamic_merge_layers,
+        merge_layers_num=args.merge_layers_num,
+        step_scheduler_metric=args.step_scheduler_metric,
+        num_labels=num_labels,
+        span_num_labels=span_num_labels,
+        steps_per_epoch=len(train_dataset) / args.batch_size,
+        loss=args.loss,
+        sce_alpha=args.sce_alpha,
+        sce_beta=args.sce_beta,
+        label_smooth=args.label_smooth,
+        decoder=args.decoder,
+        log_loss=args.log_loss,
+        warmup_ratio=args.warmup_ratio,
+        finetune=args.finetune,
+        lower_freeze=args.lower_freeze,
+        gradient_ckpt=args.gradient_ckpt,
+        child_tuning=args.child_tuning
+    )
+    
+
+    model.transformer.resize_token_embeddings(len(tokenizer))
+    logging.info("model emb matrix resized")
+    
+    if args.ckpt:
+        model.load(args.ckpt, weights_only=True, strict=False)
+        logging.info(f"{args.ckpt}")
+
+    early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=5, verbose=True, mode="max")
+    model_ckpt_callback = ModelCheckpoint(
+            dirpath=args.output,
+            monitor="valid/f1",
+            mode="max",
+            save_weights_only=True,
+            filename="{epoch}-{valid/f1:.3f}",
+            FILE_EXTENSION= f".oof{args.fold}.bin"
+            )
+
+    logger = WandbLogger(name=f"{args.model}-fold{args.fold}",
+            project="NBME",
+            log_model="all"
+            )
+
+    trainer = pl.Trainer(
+            logger=logger,
+            deterministic=True,
+            accelerator="cpu",
+            precision=16,
+            gradient_clip_val=args.gradient_clip,
+            log_gpu_memory=True,
+            log_every_n_steps=1,
+            enable_progress_bar=True,
+            max_epochs=args.epochs,
+            val_check_interval=0.25,
+            callbacks=[model_ckpt_callback, early_stop_callback]
+            )
+
+    trainer.fit(model=model, train_dataloders=train_dataset, valid_dataloaders=valid_dataset)
+
+        
+    freeze = Freeze(epochs=args.freeze if not args.crf_finetune else 9999, method=args.freeze_method)
+    
