@@ -93,7 +93,8 @@ class NBMEModel(pl.LightningModule):
                 self.crf = CRF(num_tags=num_labels, batch_first=True)
         
         if loss == "ce":
-            self.loss_layer = nn.CrossEntropyLoss(label_smoothing=label_smooth)
+            #self.loss_layer = nn.CrossEntropyLoss(label_smoothing=label_smooth)
+            self.loss_layer = nn.BCEWithLogitsLoss(reduction="none")
         elif loss == "sce":
             self.loss_layer = SCELoss(sce_alpha, sce_beta, num_classes=num_labels if self.decoder != "span" else span_num_labels, label_smooth=label_smooth)
         else:
@@ -161,27 +162,30 @@ class NBMEModel(pl.LightningModule):
     
     def loss(self, outputs, targets, attention_mask):
         attention_mask = attention_mask.view(-1)
-        outputs = torch.softmax(outputs, dim=-1)
         outputs = outputs.view(-1, self.num_labels)[attention_mask]
-        targets = targets.view(-1)[attention_mask]
+        targets = targets.view(-1, self.num_labels)[attention_mask]
 
         loss = self.loss_layer(outputs, targets)
+        loss = torch.masked_select(loss, targets != -1).mean()
         return loss
 
     def monitor_metrics(self, outputs, targets, attention_masks, token_type_ids):
         f1 = 0
-        outputs = torch.argmax(outputs, dim=-1)
-        outputs[outputs == 2] = 0
-        targets[targets == 2] = 0
+        outputs = torch.squeeze(outputs, dim=-1)
+        outputs = torch.sigmoid(outputs)
+        outputs[outputs < 0.5] = 0
+        outputs[outputs > 0.5] = 1
         for output, target, attention_mask, token_type_id in zip(outputs, targets, attention_masks, token_type_ids):
             token_type_id = torch.masked_select(token_type_id, attention_mask)
             output = torch.masked_select(output, attention_mask)
             target = torch.masked_select(target, attention_mask)
-            output = torch.masked_select(output, token_type_id)
-            target = torch.masked_select(target, token_type_id)
-            tmp_f1 = f1_score(output.cpu().numpy(), target.cpu().numpy())
-            print(output)
-            print(target)
+
+            mask = target != -1
+            output = torch.masked_select(output, mask)
+            target = torch.masked_select(target, mask)
+
+
+            tmp_f1 = f1_score(output.cpu().detach().numpy(), target.cpu().detach().numpy())
             f1 += tmp_f1
 
         f1 /= len(outputs)
@@ -189,7 +193,6 @@ class NBMEModel(pl.LightningModule):
         return {"f1": f1}
 
     def forward(self, input_ids, attention_mask, token_type_ids=None, targets=None):
-        print(input_ids.shape)
         if token_type_ids is not None:
             transformer_out = self.transformer(input_ids, attention_mask, token_type_ids, output_hidden_states=self.dynamic_merge_layers)
         else:
@@ -306,10 +309,8 @@ class NBMEModel(pl.LightningModule):
         output = self(**batch)
         loss = output["loss"]
         f1 = output["f1"]
-        self.log('train/loss', loss)
-        self.log('train/f1', f1, prog_bar=True)
-        self.log('train/avg_f1', f1, on_step=True, on_epoch=True, prog_bar=True)
-        self.log('train/avg_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train/f1', f1, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
         return loss
 

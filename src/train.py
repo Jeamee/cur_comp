@@ -32,6 +32,7 @@ import random
 import warnings
 import logging
 import time
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import numpy as np
 import pandas as pd
@@ -124,14 +125,14 @@ if __name__ == "__main__":
 
     for text_col in ['pn_history']:
         pn_history_lengths = []
-        tk0 = tqdm(df["patient_notes"][text_col].fillna("").values, total=len(patient_notes))
+        tk0 = tqdm(df[text_col].fillna("").values, total=len(df))
         for text in tk0:
             length = len(tokenizer(text, add_special_tokens=False)['input_ids'])
             pn_history_lengths.append(length)
 
     for text_col in ['feature_text']:
         features_lengths = []
-        tk0 = tqdm(df["features"][text_col].fillna("").values, total=len(features))
+        tk0 = tqdm(df[text_col].fillna("").values, total=len(df))
         for text in tk0:
             length = len(tokenizer(text, add_special_tokens=False)['input_ids'])
             features_lengths.append(length)
@@ -157,7 +158,7 @@ if __name__ == "__main__":
 
     num_train_steps = int(len(train_dataset) / args.batch_size / args.accumulation_steps * args.epochs)
     
-    num_labels = 3
+    num_labels = 1
     span_num_labels = 2
     model = NBMEModel(
         max_len=args.max_len,

@@ -28,9 +28,9 @@ def create_label(tokenizer, max_len, text, annotation_length, location_list):
                             padding="max_length",
                             return_offsets_mapping=True)
     offset_mapping = encoded['offset_mapping']
-    #ignore_idxes = np.where(np.array(encoded.sequence_ids()) != 0)[0]
+    ignore_idxes = np.where(np.array(encoded.sequence_ids()) != 0)[0]
     label = np.zeros(len(offset_mapping))
-    #label[ignore_idxes] = 0
+    label[ignore_idxes] = -1
     if annotation_length != 0:
         for location in location_list:
             for loc in [s.split() for s in location.split(';')]:
@@ -46,7 +46,7 @@ def create_label(tokenizer, max_len, text, annotation_length, location_list):
                     start_idx = end_idx
                 if (start_idx != -1) & (end_idx != -1):
                     label[start_idx:end_idx] = 1
-    return torch.tensor(label, dtype=torch.long)
+    return torch.tensor(label, dtype=torch.float)
 
 
 class TrainDataset(Dataset):
