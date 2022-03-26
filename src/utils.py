@@ -9,9 +9,8 @@ import pandas as pd
 import torch
 from math import ceil
 from joblib import Parallel, delayed
-from tez import enums
-from tez.callbacks import Callback
 from tqdm import tqdm
+from pytorch_lightning.callbacks import Callback
 
 from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
 from torch.optim import Optimizer

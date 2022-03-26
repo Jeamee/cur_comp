@@ -19,12 +19,10 @@ class NBMEModel(pl.LightningModule):
         model_name,
         num_train_steps,
         transformer_learning_rate,
-        other_learning_rate,
         num_labels,
         span_num_labels,
         steps_per_epoch,
         dynamic_merge_layers,
-        step_scheduler_metric,
         loss="ce",
         sce_alpha=1.0,
         sce_beta=1.0,
@@ -32,12 +30,9 @@ class NBMEModel(pl.LightningModule):
         decoder="softmax",
         max_len=4096,
         merge_layers_num=-2,
-        log_loss=False,
         warmup_ratio=0.05,
         finetune=False,
-        lower_freeze=0.,
         gradient_ckpt=False,
-        child_tuning="",
         max_position_embeddings=None
     ):
         super().__init__()
@@ -46,7 +41,6 @@ class NBMEModel(pl.LightningModule):
         self.cur_step = 0
         self.max_len = max_len
         self.transformer_learning_rate = transformer_learning_rate
-        self.other_learning_rate = other_learning_rate
         self.dynamic_merge_layers = dynamic_merge_layers
         self.merge_layers_num = merge_layers_num
         self.model_name = model_name
@@ -55,10 +49,8 @@ class NBMEModel(pl.LightningModule):
         self.span_num_labels = span_num_labels
         self.label_smooth = label_smooth
         self.decoder = decoder
-        self.log_loss=log_loss
         self.warmup_ratio = warmup_ratio
         self.finetune = finetune
-        self.lower_freeze = lower_freeze
 
         hidden_dropout_prob: float = 0.1
         layer_norm_eps: float = 1e-7
@@ -88,11 +80,6 @@ class NBMEModel(pl.LightningModule):
         self.dropout4 = nn.Dropout(0.4)
         self.dropout5 = nn.Dropout(0.5)
         
-        if self.lower_freeze > 0:
-            params = list(self.transformer.parameters())
-            layer_num = int(len(params) * self.lower_freeze)
-            for param in params[: layer_num + 1]:
-                param.requires_grad = False
         
         if self.dynamic_merge_layers:
             self.layer_logits = nn.Linear(config.hidden_size, 1)
@@ -163,39 +150,50 @@ class NBMEModel(pl.LightningModule):
             patience = 10
 
             sch = GradualWarmupScheduler(
-                self.optimizer,
+                opt,
                 multiplier=1.1,
                 warmup_epoch=int(self.warmup_ratio * self.num_train_steps) ,
                 total_epoch=self.num_train_steps)
             
-            return opt, sch
+            return [opt], [sch]
 
         return opt
     
     def loss(self, outputs, targets, attention_mask):
-        outputs = torch.argmax(outputs, dim=-1)
-        outputs = torch.masked_select(outputs, attention_mask)
-        targets = targets.view(-1)
+        attention_mask = attention_mask.view(-1)
+        outputs = torch.softmax(outputs, dim=-1)
+        outputs = outputs.view(-1, self.num_labels)[attention_mask]
+        targets = targets.view(-1)[attention_mask]
 
         loss = self.loss_layer(outputs, targets)
         return loss
 
     def monitor_metrics(self, outputs, targets, attention_masks, token_type_ids):
         f1 = 0
+        outputs = torch.argmax(outputs, dim=-1)
+        outputs[outputs == 2] = 0
+        targets[targets == 2] = 0
         for output, target, attention_mask, token_type_id in zip(outputs, targets, attention_masks, token_type_ids):
+            token_type_id = torch.masked_select(token_type_id, attention_mask)
             output = torch.masked_select(output, attention_mask)
-            output = torch.masked_select(output, token_type_id[:len(output)])
-            f1 += f1_score(output.cpu().numpy(), target.cpu().numpy())
+            target = torch.masked_select(target, attention_mask)
+            output = torch.masked_select(output, token_type_id)
+            target = torch.masked_select(target, token_type_id)
+            tmp_f1 = f1_score(output.cpu().numpy(), target.cpu().numpy())
+            print(output)
+            print(target)
+            f1 += tmp_f1
 
         f1 /= len(outputs)
 
         return {"f1": f1}
 
-    def forward(self, ids, mask, token_type_ids=None, targets=None, id=None):
-        if token_type_ids:
-            transformer_out = self.transformer(ids, mask, token_type_ids, output_hidden_states=self.dynamic_merge_layers)
+    def forward(self, input_ids, attention_mask, token_type_ids=None, targets=None):
+        print(input_ids.shape)
+        if token_type_ids is not None:
+            transformer_out = self.transformer(input_ids, attention_mask, token_type_ids, output_hidden_states=self.dynamic_merge_layers)
         else:
-            transformer_out = self.transformer(ids, mask, output_hidden_states=self.dynamic_merge_layers)
+            transformer_out = self.transformer(input_ids, attention_mask, output_hidden_states=self.dynamic_merge_layers)
             
         if self.dynamic_merge_layers:
             layers_output = torch.cat([torch.unsqueeze(layer, 2) for layer in transformer_out.hidden_states[self.merge_layers_num:]], dim=2)
@@ -251,9 +249,6 @@ class NBMEModel(pl.LightningModule):
 
         probs = None
         if self.decoder == "softmax":
-            if token_type_ids:
-                logits = torch.masked_select(logits, token_type_ids)
-
             probs = torch.softmax(logits, dim=-1)
         elif self.decoder == "crf":
             probs = self.crf.decode(emissions=logits, mask=mask.byte())
@@ -265,11 +260,11 @@ class NBMEModel(pl.LightningModule):
         
         if targets is not None:
             if self.decoder == "softmax":
-                loss1 = self.loss(logits1, targets, attention_mask=mask)
-                loss2 = self.loss(logits2, targets, attention_mask=mask)
-                loss3 = self.loss(logits3, targets, attention_mask=mask)
-                loss4 = self.loss(logits4, targets, attention_mask=mask)
-                loss5 = self.loss(logits5, targets, attention_mask=mask)
+                loss1 = self.loss(logits1, targets, attention_mask=attention_mask)
+                loss2 = self.loss(logits2, targets, attention_mask=attention_mask)
+                loss3 = self.loss(logits3, targets, attention_mask=attention_mask)
+                loss4 = self.loss(logits4, targets, attention_mask=attention_mask)
+                loss5 = self.loss(logits5, targets, attention_mask=attention_mask)
                 loss = (loss1 + loss2 + loss3 + loss4 + loss5) / 5
             elif self.decoder == "crf":
                 targets = targets * mask
@@ -298,7 +293,7 @@ class NBMEModel(pl.LightningModule):
             else:
                 raise ValueException("except decoder in [softmax, crf]")
             
-        f1 = self.monitor_metrics(probs, targets, attention_masks=mask, token_type_ids=token_type_ids)["f1"]
+        f1 = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)["f1"]
         
         return {
             "preds": probs,
@@ -311,13 +306,15 @@ class NBMEModel(pl.LightningModule):
         output = self(**batch)
         loss = output["loss"]
         f1 = output["f1"]
-        self.log('train/loss', loss, prog_bar=True)
+        self.log('train/loss', loss)
         self.log('train/f1', f1, prog_bar=True)
         self.log('train/avg_f1', f1, on_step=True, on_epoch=True, prog_bar=True)
         self.log('train/avg_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
+        return loss
+
     def validation_step(self, batch, batch_idx):
         output = self(**batch)
-        f1 = output["metric"]["f1"]
+        f1 = output["f1"]
         self.log('valid/f1', f1, on_step=True, on_epoch=True, prog_bar=True)
 

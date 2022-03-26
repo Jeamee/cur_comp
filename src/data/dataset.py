@@ -6,13 +6,17 @@ import torch
 
 
 def prepare_input(tokenizer, max_len, text, feature_text):
-    inputs = tokenizer(text, feature_text, 
+    inputs = tokenizer(text, feature_text,
                            add_special_tokens=True,
                            max_length=max_len,
                            padding="max_length",
                            return_offsets_mapping=False,
                            return_tensors="pt"
                       )
+    for key, val in inputs.items():
+        inputs[key] = torch.squeeze(val)
+    inputs["token_type_ids"] = torch.logical_not(inputs["token_type_ids"].byte())
+    inputs["attention_mask"] = inputs["attention_mask"].byte()
     
     return inputs
 
@@ -24,9 +28,9 @@ def create_label(tokenizer, max_len, text, annotation_length, location_list):
                             padding="max_length",
                             return_offsets_mapping=True)
     offset_mapping = encoded['offset_mapping']
-    ignore_idxes = np.where(np.array(encoded.sequence_ids()) != 0)[0]
+    #ignore_idxes = np.where(np.array(encoded.sequence_ids()) != 0)[0]
     label = np.zeros(len(offset_mapping))
-    label[ignore_idxes] = -1
+    #label[ignore_idxes] = 0
     if annotation_length != 0:
         for location in location_list:
             for loc in [s.split() for s in location.split(';')]:
@@ -42,7 +46,7 @@ def create_label(tokenizer, max_len, text, annotation_length, location_list):
                     start_idx = end_idx
                 if (start_idx != -1) & (end_idx != -1):
                     label[start_idx:end_idx] = 1
-    return torch.tensor(label, dtype=torch.float)
+    return torch.tensor(label, dtype=torch.long)
 
 
 class TrainDataset(Dataset):
@@ -67,4 +71,5 @@ class TrainDataset(Dataset):
                 self.pn_historys[item], 
                 self.annotation_lengths[item], 
                 self.locations[item])
-        return inputs, label
+        inputs["targets"] = label
+        return inputs

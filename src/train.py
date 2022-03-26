@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-transformers_path = Path("/opt/conda/lib/python3.7/site-packages/transformers")
+transformers_path = Path("/opt/conda/lib/python3.8/site-packages/transformers")
 
 input_dir = Path("../src/deberta-v2-3-fast-tokenizer")
 
@@ -25,6 +25,7 @@ import gc
 gc.enable()
 
 import sys
+import ast
 import argparse
 import os
 import random
@@ -34,7 +35,9 @@ import time
 
 import numpy as np
 import pandas as pd
-import tez
+pd.set_option('display.max_rows', 500)
+pd.set_option('display.max_columns', 500)
+pd.set_option('display.width', 1000)
 import torch
 import torch.nn as nn
 import bitsandbytes as bnb
@@ -42,7 +45,6 @@ import pytorch_lightning as pl
 
 from tqdm import tqdm
 from math import ceil
-from tez import enums
 from copy import deepcopy
 from sklearn import metrics
 from torch.nn.parameter import Parameter
@@ -57,8 +59,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 
-from utils import EarlyStopping, prepare_training_data, target_id_map, id_target_map, span_target_id_map, span_id_target_map, GradualWarmupScheduler, ReduceLROnPlateau, span_decode
-from utils import biaffine_decode, Freeze
+from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode
+#from utils import biaffine_decode, Freeze
 from model.model import NBMEModel
 from data.dataset import TrainDataset
 from loss.dice_loss import DiceLoss
@@ -107,10 +109,12 @@ if __name__ == "__main__":
     pl.seed_everything(seed=args.seed, workers=True)
     os.makedirs(args.output, exist_ok=True)
     df = pd.read_csv(args.input_csv)
+    df['annotation'] = df['annotation'].apply(ast.literal_eval)
+    df['location'] = df['location'].apply(ast.literal_eval)
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
-    
+   
     
     if args.model in ["microsoft/deberta-v3-large", "microsoft/deberta-v2-xlarge"]:
         tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
@@ -136,17 +140,15 @@ if __name__ == "__main__":
 
     num_train_steps = int(len(train_dataset) / args.batch_size / args.accumulation_steps * args.epochs)
     
-    num_labels = 2
+    num_labels = 3
     span_num_labels = 2
     model = NBMEModel(
         max_len=args.max_len,
         model_name=args.model,
         num_train_steps=num_train_steps,
         transformer_learning_rate=args.trans_lr,
-        other_learning_rate=args.other_lr,
         dynamic_merge_layers=args.dynamic_merge_layers,
         merge_layers_num=args.merge_layers_num,
-        step_scheduler_metric=args.step_scheduler_metric,
         num_labels=num_labels,
         span_num_labels=span_num_labels,
         steps_per_epoch=len(train_dataset) / args.batch_size,
@@ -155,12 +157,9 @@ if __name__ == "__main__":
         sce_beta=args.sce_beta,
         label_smooth=args.label_smooth,
         decoder=args.decoder,
-        log_loss=args.log_loss,
         warmup_ratio=args.warmup_ratio,
         finetune=args.finetune,
-        lower_freeze=args.lower_freeze,
         gradient_ckpt=args.gradient_ckpt,
-        child_tuning=args.child_tuning
     )
     
 
@@ -178,8 +177,8 @@ if __name__ == "__main__":
             mode="max",
             save_weights_only=True,
             filename="{epoch}-{valid/f1:.3f}",
-            FILE_EXTENSION= f".oof{args.fold}.bin"
             )
+    model_ckpt_callback.FILE_EXTENSION = f".oof{args.fold}.bin"
 
     logger = WandbLogger(name=f"{args.model}-fold{args.fold}",
             project="NBME",
@@ -188,10 +187,12 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
             logger=logger,
-            deterministic=True,
-            accelerator="cpu",
+            deterministic=False,
+            accelerator="gpu",
+            gpus=1,
+            auto_select_gpus=True,
             precision=16,
-            gradient_clip_val=args.gradient_clip,
+            gradient_clip_val=args.clip_grad_norm,
             log_gpu_memory=True,
             log_every_n_steps=1,
             enable_progress_bar=True,
@@ -200,8 +201,8 @@ if __name__ == "__main__":
             callbacks=[model_ckpt_callback, early_stop_callback]
             )
 
-    trainer.fit(model=model, train_dataloders=train_dataset, valid_dataloaders=valid_dataset)
+    trainer.fit(model=model, train_dataloaders=train_dataset, val_dataloaders=valid_dataset)
 
         
-    freeze = Freeze(epochs=args.freeze if not args.crf_finetune else 9999, method=args.freeze_method)
+   # freeze = Freeze(epochs=args.freeze if not args.crf_finetune else 9999, method=args.freeze_method)
     
