@@ -114,14 +114,31 @@ if __name__ == "__main__":
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
-   
-    
+
     if args.model in ["microsoft/deberta-v3-large", "microsoft/deberta-v2-xlarge"]:
         tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model)
         
     tokenizer.add_tokens("\n", special_tokens=True)
+
+    for text_col in ['pn_history']:
+        pn_history_lengths = []
+        tk0 = tqdm(df["patient_notes"][text_col].fillna("").values, total=len(patient_notes))
+        for text in tk0:
+            length = len(tokenizer(text, add_special_tokens=False)['input_ids'])
+            pn_history_lengths.append(length)
+
+    for text_col in ['feature_text']:
+        features_lengths = []
+        tk0 = tqdm(df["features"][text_col].fillna("").values, total=len(features))
+        for text in tk0:
+            length = len(tokenizer(text, add_special_tokens=False)['input_ids'])
+            features_lengths.append(length)
+
+    args.max_len = max(pn_history_lengths) + max(features_lengths) + 3 # cls & sep & sep
+   
+    
         
     train_dataset = DataLoader(
             TrainDataset(tokenizer, args.max_len, train_df),
