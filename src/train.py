@@ -60,8 +60,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 
-from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode
-#from utils import biaffine_decode, Freeze
+from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode, Freeze
 from model.model import NBMEModel
 from data.dataset import TrainDataset
 from loss.dice_loss import DiceLoss
@@ -97,7 +96,6 @@ def parse_args():
     parser.add_argument("--decoder", type=str, default="softmax", required=False)
     parser.add_argument("--freeze", type=int, default=10, required=False)
     parser.add_argument("--freeze_method", type=str, default="hard", required=False)
-    parser.add_argument("--lower_freeze", type=float, default=0., required=False)
     parser.add_argument("--gradient_ckpt", action="store_true", required=False)
     parser.add_argument("--clip_grad_norm", type=float, default=1.0, required=False)
     
@@ -195,6 +193,7 @@ if __name__ == "__main__":
             filename="{epoch}-{valid/f1:.3f}",
             )
     model_ckpt_callback.FILE_EXTENSION = f".oof{args.fold}.bin"
+    freeze = Freeze(epochs=args.freeze, method=args.freeze_method)
 
     logger = WandbLogger(name=f"{args.model}-fold{args.fold}",
             project="NBME",
@@ -214,11 +213,10 @@ if __name__ == "__main__":
             enable_progress_bar=True,
             max_epochs=args.epochs,
             val_check_interval=0.25,
-            callbacks=[model_ckpt_callback, early_stop_callback]
+            callbacks=[freeze, model_ckpt_callback, early_stop_callback]
             )
 
     trainer.fit(model=model, train_dataloaders=train_dataset, val_dataloaders=valid_dataset)
 
         
-   # freeze = Freeze(epochs=args.freeze if not args.crf_finetune else 9999, method=args.freeze_method)
     

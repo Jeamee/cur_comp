@@ -3,7 +3,7 @@ from utils import Freeze
 from pytorchcrf import CRF
 from loss.sce import SCELoss
 from sklearn.metrics import f1_score
-from utils import EarlyStopping, prepare_training_data, target_id_map, id_target_map, span_target_id_map, span_id_target_map, GradualWarmupScheduler, ReduceLROnPlateau, span_decode
+from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode
 
 
 import pytorch_lightning as pl
@@ -224,7 +224,7 @@ class NBMEModel(pl.LightningModule):
             loss5 = self.loss(logits5, targets, attention_mask=attention_mask)
             loss = (loss1 + loss2 + loss3 + loss4 + loss5) / 5
             
-        metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)["f1"]
+        metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)
         
         return {
             "preds": probs,
@@ -253,8 +253,8 @@ class NBMEModel(pl.LightningModule):
                 }
 
     def validation_epoch_end(self, outputs) -> None:
-        preds = np.concatenate(outputs["outputs"])
-        grounds = np.concatenate(outputs["targets"])
+        preds = np.concatenate([output["outputs"] for output in outputs])
+        grounds = np.concatenate([output["targets"] for output in outputs])
         f1 = f1_score(preds, grounds)
         self.log('valid/f1', f1, on_epoch=True)
 
