@@ -172,9 +172,10 @@ class NBMEModel(pl.LightningModule):
     def monitor_metrics(self, outputs, targets, attention_masks, token_type_ids):
         f1 = 0
         outputs = torch.squeeze(outputs, dim=-1)
-        outputs = torch.sigmoid(outputs)
         outputs[outputs < 0.5] = 0
         outputs[outputs > 0.5] = 1
+        outputs = outputs.long()
+        targets = targets.long()
         for output, target, attention_mask, token_type_id in zip(outputs, targets, attention_masks, token_type_ids):
             token_type_id = torch.masked_select(token_type_id, attention_mask)
             output = torch.masked_select(output, attention_mask)
@@ -183,7 +184,6 @@ class NBMEModel(pl.LightningModule):
             mask = target != -1
             output = torch.masked_select(output, mask)
             target = torch.masked_select(target, mask)
-
 
             tmp_f1 = f1_score(output.cpu().detach().numpy(), target.cpu().detach().numpy())
             f1 += tmp_f1
@@ -252,7 +252,7 @@ class NBMEModel(pl.LightningModule):
 
         probs = None
         if self.decoder == "softmax":
-            probs = torch.softmax(logits, dim=-1)
+            probs = torch.sigmoid(logits)
         elif self.decoder == "crf":
             probs = self.crf.decode(emissions=logits, mask=mask.byte())
         elif self.decoder == "span":
