@@ -170,27 +170,25 @@ class NBMEModel(pl.LightningModule):
         return loss
 
     def monitor_metrics(self, outputs, targets, attention_masks, token_type_ids):
-        f1 = 0
         outputs = torch.squeeze(outputs, dim=-1)
         outputs[outputs < 0.5] = 0
         outputs[outputs > 0.5] = 1
         outputs = outputs.long()
         targets = targets.long()
-        for output, target, attention_mask, token_type_id in zip(outputs, targets, attention_masks, token_type_ids):
-            token_type_id = torch.masked_select(token_type_id, attention_mask)
-            output = torch.masked_select(output, attention_mask)
-            target = torch.masked_select(target, attention_mask)
 
-            mask = target != -1
-            output = torch.masked_select(output, mask)
-            target = torch.masked_select(target, mask)
+        outputs = torch.masked_select(outputs, attention_masks)
+        targets = torch.masked_select(targets, attention_masks)
 
-            tmp_f1 = f1_score(output.cpu().detach().numpy(), target.cpu().detach().numpy())
-            f1 += tmp_f1
+        mask = targets != -1
+        outputs = torch.masked_select(outputs, mask).cpu().detach().numpy()
+        targets = torch.masked_select(targets, mask).cpu().detach().numpy()
 
-        f1 /= len(outputs)
-
-        return {"f1": f1}
+        f1 = f1_score(outputs, targets)
+        return {
+                "f1": f1,
+                "outputs": outputs,
+                "targets": targets
+                }
 
     def forward(self, input_ids, attention_mask, token_type_ids=None, targets=None):
         if token_type_ids is not None:
@@ -208,107 +206,37 @@ class NBMEModel(pl.LightningModule):
             
         sequence_output = self.dropout(sequence_output)
         
-        if self.decoder == "softmax":
-            logits1 = self.output(self.dropout1(sequence_output))
-            logits2 = self.output(self.dropout2(sequence_output))
-            logits3 = self.output(self.dropout3(sequence_output))
-            logits4 = self.output(self.dropout4(sequence_output))
-            logits5 = self.output(self.dropout5(sequence_output))
-            logits = self.output(sequence_output)
-        elif self.decoder == "crf":
-            sequence_output1 = self.dropout1(sequence_output)
-            sequence_output2 = self.dropout2(sequence_output)
-            sequence_output3 = self.dropout3(sequence_output)
-            sequence_output4 = self.dropout4(sequence_output)
-            sequence_output5 = self.dropout5(sequence_output)
-            logits1 = self.output(sequence_output1)
-            logits2 = self.output(sequence_output2)
-            logits3 = self.output(sequence_output3)
-            logits4 = self.output(sequence_output4)
-            logits5 = self.output(sequence_output5)
-            logits = self.output(sequence_output)
-        elif self.decoder == "span":
-            sequence_output1 = self.dropout1(sequence_output)
-            sequence_output2 = self.dropout2(sequence_output)
-            sequence_output3 = self.dropout3(sequence_output)
-            sequence_output4 = self.dropout4(sequence_output)
-            sequence_output5 = self.dropout5(sequence_output)
-            
-            start_logits1 = self.start_fc(sequence_output1)
-            start_logits2 = self.start_fc(sequence_output2)
-            start_logits3 = self.start_fc(sequence_output3)
-            start_logits4 = self.start_fc(sequence_output4)
-            start_logits5 = self.start_fc(sequence_output5)
-            start_logits = (start_logits1 + start_logits2 + start_logits3 + start_logits4 + start_logits5) / 5
-            
-            end_logits1 = self.end_fc(sequence_output1)
-            end_logits2 = self.end_fc(sequence_output2)
-            end_logits3 = self.end_fc(sequence_output3)
-            end_logits4 = self.end_fc(sequence_output4)
-            end_logits5 = self.end_fc(sequence_output5)
-            end_logits = (end_logits1 + end_logits2 + end_logits3 + end_logits4 + end_logits5) / 5
-            
-            logits = (start_logits, end_logits)
+        logits1 = self.output(self.dropout1(sequence_output))
+        logits2 = self.output(self.dropout2(sequence_output))
+        logits3 = self.output(self.dropout3(sequence_output))
+        logits4 = self.output(self.dropout4(sequence_output))
+        logits5 = self.output(self.dropout5(sequence_output))
+        logits = self.output(sequence_output)
 
-        probs = None
-        if self.decoder == "softmax":
-            probs = torch.sigmoid(logits)
-        elif self.decoder == "crf":
-            probs = self.crf.decode(emissions=logits, mask=mask.byte())
-        elif self.decoder == "span":
-            probs = span_decode(start_logits, end_logits)
-        else:
-            raise ValueException("except decoder in [softmax, crf]")
+        probs = torch.sigmoid(logits)
         loss = 0
         
         if targets is not None:
-            if self.decoder == "softmax":
-                loss1 = self.loss(logits1, targets, attention_mask=attention_mask)
-                loss2 = self.loss(logits2, targets, attention_mask=attention_mask)
-                loss3 = self.loss(logits3, targets, attention_mask=attention_mask)
-                loss4 = self.loss(logits4, targets, attention_mask=attention_mask)
-                loss5 = self.loss(logits5, targets, attention_mask=attention_mask)
-                loss = (loss1 + loss2 + loss3 + loss4 + loss5) / 5
-            elif self.decoder == "crf":
-                targets = targets * mask
-                gather_logits = torch.cat([logits1, logits2, logits3, logits4, logits5], dim=0).cuda()
-                gather_targets = torch.cat([targets] * 5, dim=0)
-                gather_mask = torch.cat([mask] * 5, dim=0)
-                loss = -1. * self.crf(emissions=gather_logits, tags=gather_targets, mask=gather_mask.byte(), reduction='mean')
-            elif self.decoder == "span":
-                targets, start_targets, end_targets = targets
-                
-                start_loss1 = self.loss(start_logits1, start_targets, attention_mask=mask)
-                start_loss2 = self.loss(start_logits2, start_targets, attention_mask=mask)
-                start_loss3 = self.loss(start_logits3, start_targets, attention_mask=mask)
-                start_loss4 = self.loss(start_logits4, start_targets, attention_mask=mask)
-                start_loss5 = self.loss(start_logits5, start_targets, attention_mask=mask)
-                start_loss = (start_loss1 + start_loss2 + start_loss3 + start_loss4 + start_loss5) / 5
-                
-                end_loss1 = self.loss(end_logits1, end_targets, attention_mask=mask)
-                end_loss2 = self.loss(end_logits2, end_targets, attention_mask=mask)
-                end_loss3 = self.loss(end_logits3, end_targets, attention_mask=mask)
-                end_loss4 = self.loss(end_logits4, end_targets, attention_mask=mask)
-                end_loss5 = self.loss(end_logits5, end_targets, attention_mask=mask)
-                end_loss = (end_loss1 + end_loss2 + end_loss3 + end_loss4 + end_loss5) / 5
-                
-                loss = start_loss + end_loss
-            else:
-                raise ValueException("except decoder in [softmax, crf]")
+            loss1 = self.loss(logits1, targets, attention_mask=attention_mask)
+            loss2 = self.loss(logits2, targets, attention_mask=attention_mask)
+            loss3 = self.loss(logits3, targets, attention_mask=attention_mask)
+            loss4 = self.loss(logits4, targets, attention_mask=attention_mask)
+            loss5 = self.loss(logits5, targets, attention_mask=attention_mask)
+            loss = (loss1 + loss2 + loss3 + loss4 + loss5) / 5
             
-        f1 = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)["f1"]
+        metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)["f1"]
         
         return {
             "preds": probs,
             "logits": logits,
             "loss": loss,
-            "f1": f1
+            "metric": metric
         }
 
     def training_step(self, batch, batch_idx):
         output = self(**batch)
         loss = output["loss"]
-        f1 = output["f1"]
+        f1 = output["metric"]["f1"]
         self.log('train/f1', f1, on_step=True, on_epoch=True, prog_bar=True)
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
@@ -316,6 +244,17 @@ class NBMEModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         output = self(**batch)
-        f1 = output["f1"]
-        self.log('valid/f1', f1, on_step=True, on_epoch=True, prog_bar=True)
+        outputs = output["metric"]["outputs"]
+        targets = output["metric"]["targets"]
+        
+        return {
+                "outputs": outputs,
+                "targets": targets
+                }
+
+    def validation_epoch_end(self, outputs) -> None:
+        preds = np.concatenate(outputs["outputs"])
+        grounds = np.concatenate(outputs["targets"])
+        f1 = f1_score(preds, grounds)
+        self.log('valid/f1', f1, on_epoch=True)
 

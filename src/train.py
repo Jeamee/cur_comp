@@ -105,7 +105,7 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    NUM_JOBS = 2
+    NUM_JOBS = os.cpu_count() - 1
     args = parse_args()
     pl.seed_everything(seed=args.seed, workers=True)
     os.makedirs(args.output, exist_ok=True)
@@ -139,8 +139,6 @@ if __name__ == "__main__":
 
     args.max_len = max(pn_history_lengths) + max(features_lengths) + 3 # cls & sep & sep
    
-    
-        
     train_dataset = DataLoader(
             TrainDataset(tokenizer, args.max_len, train_df),
             batch_size=args.batch_size,
@@ -212,7 +210,7 @@ if __name__ == "__main__":
             precision=16,
             gradient_clip_val=args.clip_grad_norm,
             log_gpu_memory=True,
-            log_every_n_steps=1,
+            log_every_n_steps=25,
             enable_progress_bar=True,
             max_epochs=args.epochs,
             val_check_interval=0.25,
