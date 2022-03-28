@@ -161,7 +161,6 @@ def smooth_one_hot(true_labels: torch.Tensor, classes: int, smoothing=0.0):
 
 class Freeze(Callback):
     def __init__(self, epochs=1, method="hard"):
-        self.count = 0
         self.thre = epochs
         self.method = method
         self.done = False
@@ -169,8 +168,7 @@ class Freeze(Callback):
     def on_epoch_start(self, trainer, model):
         if self.thre == 0:
             self.done = True
-            for idx, params in enumerate(model.optimizer_grouped_parameters[2:]):
-                logging.info(f"groups {idx + 2} of {len(model.optimizer_grouped_parameters[2:])} has been freeze")
+            for idx, params in enumerate(model.optimizer_grouped_parameters[-2:]):
                 if self.method == "hard":
                     params = params["params"]
                     for param in params:
@@ -185,15 +183,13 @@ class Freeze(Callback):
         if self.done:
             return
         
-        self.count += 1
-        if self.count < self.thre:
+        if trainer.current_epoch < self.thre:
             return
         
-        logging.info("freeze crf and linear layer")
+        print("freeze crf and linear layer")
         self.done = True
         
-        for idx, params in enumerate(model.optimizer_grouped_parameters[2:]):
-            logging.info(f"groups {idx + 2} of {len(model.optimizer_grouped_parameters[2:])} has been freeze")
+        for params in model.optimizer_grouped_parameters[-2:]:
             if self.method == "hard":
                 params = params["params"]
                 for param in params:

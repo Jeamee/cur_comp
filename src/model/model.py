@@ -6,6 +6,7 @@ from sklearn.metrics import f1_score
 from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode
 
 
+import re
 import pytorch_lightning as pl
 import torch.nn as nn
 import bitsandbytes as bnb
@@ -31,6 +32,7 @@ class NBMEModel(pl.LightningModule):
         max_len=4096,
         merge_layers_num=-2,
         warmup_ratio=0.05,
+        lr_decay=1.,
         finetune=False,
         gradient_ckpt=False,
         max_position_embeddings=None
@@ -51,6 +53,7 @@ class NBMEModel(pl.LightningModule):
         self.decoder = decoder
         self.warmup_ratio = warmup_ratio
         self.finetune = finetune
+        self.lr_decay = lr_decay
 
         hidden_dropout_prob: float = 0.1
         layer_norm_eps: float = 1e-7
@@ -68,6 +71,7 @@ class NBMEModel(pl.LightningModule):
                 
             }
         )
+        self.num_layers = config.num_hidden_layers
         
         self.transformer = AutoModel.from_pretrained(model_name, config=config)
         if gradient_ckpt:
@@ -105,38 +109,36 @@ class NBMEModel(pl.LightningModule):
         param_optimizer = list(self.named_parameters())
         no_decay = ["bias", "LayerNorm.bias"]
 
-        transformer_param_optimizer = []
-        crf_param_optimizer = []
+        transformer_param_optimizer = [[] for _ in range(self.num_layers + 1)]
         other_param_optimizer = []
 
         for name, para in param_optimizer:
             space = name.split('.')
             if space[0] == 'transformer':
-                transformer_param_optimizer.append((name, para))
-            elif space[0] == 'crf':
-                crf_param_optimizer.append((name, para))
+                prob_layer_id = re.findall("\d{1,2}", name)
+                layer_num = int(prob_layer_id [0]) if prob_layer_id else 0
+                transformer_param_optimizer[layer_num].append((name, para))
             else:
                 other_param_optimizer.append((name, para))
                 
         other_lr = self.transformer_learning_rate * 100
         
-        self.optimizer_grouped_parameters = [
-            {"params": [p for n, p in transformer_param_optimizer if not any(nd in n for nd in no_decay) and p.requires_grad],
-             "weight_decay": 0.01, 'lr': self.transformer_learning_rate},
-            {"params": [p for n, p in transformer_param_optimizer if any(nd in n for nd in no_decay) and p.requires_grad],
-             "weight_decay": 0.0, 'lr': self.transformer_learning_rate},
-            
-            {"params": [p for n, p in crf_param_optimizer if not any(nd in n for nd in no_decay) and p.requires_grad],
-             "weight_decay": 0.01, 'lr': other_lr},
-            {"params": [p for n, p in crf_param_optimizer if any(nd in n for nd in no_decay) and p.requires_grad],
-             "weight_decay": 0.0, 'lr': other_lr},
+        self.optimizer_grouped_parameters = []
+        for idx, layer in enumerate(transformer_param_optimizer):
+            lr = self.lr_decay ** (self.num_layers - idx) * self.transformer_learning_rate if idx > 0 else self.transformer_learning_rate
 
-            # 其他模块，差分学习率
+            decay_param_dict = {"params": [p for n, p in layer if not any(nd in n for nd in no_decay) and p.requires_grad],
+             "weight_decay": 0.01, 'lr': lr}
+            no_decay_param_dict = {"params": [p for n, p in layer if any(nd in n for nd in no_decay) and p.requires_grad],
+             "weight_decay": 0.0, 'lr': lr}
+            self.optimizer_grouped_parameters.extend([decay_param_dict, no_decay_param_dict])
+
+        self.optimizer_grouped_parameters.extend([
             {"params": [p for n, p in other_param_optimizer if not any(nd in n for nd in no_decay) and p.requires_grad],
              "weight_decay": 0.01, 'lr': other_lr},
             {"params": [p for n, p in other_param_optimizer if any(nd in n for nd in no_decay) and p.requires_grad],
-             "weight_decay": 0.0, 'lr': other_lr},
-        ]
+             "weight_decay": 0.0, 'lr': other_lr}
+        ])
         
         opt = bnb.optim.AdamW8bit(self.optimizer_grouped_parameters, lr=self.transformer_learning_rate)
 
@@ -216,7 +218,7 @@ class NBMEModel(pl.LightningModule):
         probs = torch.sigmoid(logits)
         loss = 0
         
-        if targets is not None:
+        if self.training:
             loss1 = self.loss(logits1, targets, attention_mask=attention_mask)
             loss2 = self.loss(logits2, targets, attention_mask=attention_mask)
             loss3 = self.loss(logits3, targets, attention_mask=attention_mask)

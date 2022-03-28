@@ -76,6 +76,7 @@ def parse_args():
     parser.add_argument("--fold", type=int, required=True)
     parser.add_argument("--seed", type=int, default=43, required=False)
     parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--desc", type=str, default="base", required=False)
     parser.add_argument("--trans_lr", type=float, required=True)
     parser.add_argument("--dynamic_merge_layers", action="store_true", required=False)
     parser.add_argument("--merge_layers_num", type=int, default=-2, required=False)
@@ -98,6 +99,9 @@ def parse_args():
     parser.add_argument("--freeze_method", type=str, default="hard", required=False)
     parser.add_argument("--gradient_ckpt", action="store_true", required=False)
     parser.add_argument("--clip_grad_norm", type=float, default=1.0, required=False)
+    parser.add_argument("--lr_decay", type=float, default=1.0, required=False)
+    parser.add_argument("--add_return_token", action="store_true", required=False)
+
     
     return parser.parse_args()
 
@@ -119,7 +123,8 @@ if __name__ == "__main__":
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model)
         
-    tokenizer.add_tokens("\n", special_tokens=True)
+    if args.add_return_token:
+        tokenizer.add_tokens("\n", special_tokens=True)
 
     for text_col in ['pn_history']:
         pn_history_lengths = []
@@ -141,14 +146,14 @@ if __name__ == "__main__":
             TrainDataset(tokenizer, args.max_len, train_df),
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=4,
+            num_workers=3,
             pin_memory=True,
             )
     valid_dataset = DataLoader(
             TrainDataset(tokenizer, args.max_len, valid_df),
             batch_size=args.valid_batch_size,
             shuffle=False,
-            num_workers=4,
+            num_workers=3,
             pin_memory=True,
             )
 
@@ -174,17 +179,18 @@ if __name__ == "__main__":
         warmup_ratio=args.warmup_ratio,
         finetune=args.finetune,
         gradient_ckpt=args.gradient_ckpt,
+        lr_decay=args.lr_decay,
     )
     
 
-    model.transformer.resize_token_embeddings(len(tokenizer))
-    logging.info("model emb matrix resized")
+    if args.add_return_token:
+        model.transformer.resize_token_embeddings(len(tokenizer))
+        tokenizer.save_pretrained(args.output)
     
     if args.ckpt:
         model.load(args.ckpt, weights_only=True, strict=False)
-        logging.info(f"{args.ckpt}")
 
-    early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=5, verbose=True, mode="max")
+    early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=12, verbose=True, mode="max")
     model_ckpt_callback = ModelCheckpoint(
             dirpath=args.output,
             monitor="valid/f1",
@@ -195,12 +201,14 @@ if __name__ == "__main__":
     model_ckpt_callback.FILE_EXTENSION = f".oof{args.fold}.bin"
     freeze = Freeze(epochs=args.freeze, method=args.freeze_method)
 
-    logger = WandbLogger(name=f"{args.model}-fold{args.fold}",
+    logger = WandbLogger(name=f"{args.model}-fold{args.fold}-{args.desc}",
             project="NBME",
-            log_model="all"
             )
 
+    logger.experiment.config.update(vars(args))
+
     trainer = pl.Trainer(
+            benchmark=True,
             logger=logger,
             deterministic=False,
             accelerator="gpu",
@@ -209,7 +217,7 @@ if __name__ == "__main__":
             precision=16,
             gradient_clip_val=args.clip_grad_norm,
             log_gpu_memory=True,
-            log_every_n_steps=25,
+            log_every_n_steps=5,
             enable_progress_bar=True,
             max_epochs=args.epochs,
             val_check_interval=0.25,
