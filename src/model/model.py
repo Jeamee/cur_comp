@@ -259,4 +259,3 @@ class NBMEModel(pl.LightningModule):
         grounds = np.concatenate([output["targets"] for output in outputs])
         f1 = f1_score(preds, grounds)
         self.log('valid/f1', f1, on_epoch=True)
-

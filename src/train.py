@@ -125,6 +125,7 @@ if __name__ == "__main__":
         
     if args.add_return_token:
         tokenizer.add_tokens("\n", special_tokens=True)
+        tokenizer.save_pretrained(args.output)
 
     for text_col in ['pn_history']:
         pn_history_lengths = []
@@ -185,7 +186,6 @@ if __name__ == "__main__":
 
     if args.add_return_token:
         model.transformer.resize_token_embeddings(len(tokenizer))
-        tokenizer.save_pretrained(args.output)
     
     if args.ckpt:
         model.load(args.ckpt, weights_only=True, strict=False)
