@@ -40,7 +40,6 @@ def main():
         output_dir=args.output, overwrite_output_dir=True, num_train_epochs=args.epoch, learning_rate=args.lr,
         per_device_train_batch_size=args.bs, save_total_limit=5, warmup_steps=args.warmup_steps, weight_decay=0.01,
         adam_beta2=0.98, adam_epsilon=1e-6, save_strategy="epoch", fp16=True, gradient_checkpointing=True,
-        sharded_ddp=["offload", "zero_dp_3"]
         )# save_steps=10000
 
     trainer = Trainer(
