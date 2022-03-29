@@ -23,6 +23,7 @@ def main():
     parser.add_argument("bs", type=int, required=True)
     parser.add_argument("epoch", type=int, required=True)
     parser.add_argument("lr", type=float, required=True)
+    parser.add_argument("warmup_steps", type=int, required=True)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     tokenizer.add_tokens("\n", special_tokens=True)
@@ -35,7 +36,9 @@ def main():
 
     training_args = TrainingArguments(
         output_dir=args.output, overwrite_output_dir=True, num_train_epochs=args.epoch, learning_rate=args.lr,
-        per_device_train_batch_size=args.bs, save_total_limit=5)# save_steps=10000
+        per_device_train_batch_size=args.bs, save_total_limit=5, warmup_steps=args.warmup_steps, weight_decay=0.01,
+        adam_beta2=0.98, adam_epsilon=1e-6, save_strategy="epoch"
+        )# save_steps=10000
 
     trainer = Trainer(
         model=model, args=training_args, data_collator=data_collator, train_dataset=train_dataset)

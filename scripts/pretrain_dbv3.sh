@@ -1,9 +1,10 @@
 set -Eeuox
-BS=16
+BS=128
 LR=1e-5
 CORPUS=/workspace/corpus.txt
 SAVE_DIR=/workspace/pretrain_dbv3
 EPOCH=100
+WP_STEPS=10000
 MODEL="microsoft/deberta-v3-large"
 
 mkdir $SAVE_DIR
@@ -13,4 +14,5 @@ python ../src/pretrain.py --model $MODEL \
 --output $SAVE_DIR \
 --bs $BS \
 --epoch $EPOCH \
---lr $LR
+--lr $LR \
+--warmup_steps $WP_STEPS
