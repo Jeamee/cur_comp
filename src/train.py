@@ -118,7 +118,7 @@ if __name__ == "__main__":
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
 
-    if args.model in ["microsoft/deberta-v3-large", "microsoft/deberta-v2-xlarge"]:
+    if args.model in ["microsoft/deberta-v3-large", "microsoft/deberta-v2-xlarge"] or "dbv3" in args.model:
         tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model)

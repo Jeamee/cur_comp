@@ -1,15 +1,15 @@
-from transformers import AutoModel, AutoConfig
+from transformers import AutoModel, AutoConfig, AdamW
 from utils import Freeze
 from pytorchcrf import CRF
 from loss.sce import SCELoss
-from sklearn.metrics import f1_score
+#from sklearn.metrics import f1_score
+from torchmetrics.functional import f1_score
 from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode
 
 
 import re
 import pytorch_lightning as pl
 import torch.nn as nn
-import bitsandbytes as bnb
 import numpy as np
 import torch
 
@@ -35,7 +35,8 @@ class NBMEModel(pl.LightningModule):
         lr_decay=1.,
         finetune=False,
         gradient_ckpt=False,
-        max_position_embeddings=None
+        max_position_embeddings=None,
+        use_tpu=False
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -54,6 +55,7 @@ class NBMEModel(pl.LightningModule):
         self.warmup_ratio = warmup_ratio
         self.finetune = finetune
         self.lr_decay = lr_decay
+        self.use_tpu = use_tpu
 
         hidden_dropout_prob: float = 0.1
         layer_norm_eps: float = 1e-7
@@ -140,13 +142,17 @@ class NBMEModel(pl.LightningModule):
              "weight_decay": 0.0, 'lr': other_lr}
         ])
         
-        opt = bnb.optim.AdamW8bit(self.optimizer_grouped_parameters, lr=self.transformer_learning_rate)
+        if not self.use_tpu:
+            import bitsandbytes as bnb
+            opt = bnb.optim.AdamW8bit(self.optimizer_grouped_parameters, lr=self.transformer_learning_rate)
 
-        for module in self.modules():
-            if isinstance(module, nn.Embedding):
-                bnb.optim.GlobalOptimManager.get_instance().register_module_override(
-                    module, 'weight', {'optim_bits': 32}
-                )            
+            for module in self.modules():
+                if isinstance(module, nn.Embedding):
+                    bnb.optim.GlobalOptimManager.get_instance().register_module_override(
+                        module, 'weight', {'optim_bits': 32}
+                    )
+        else:
+            opt = AdamW(self.optimizer_grouped_parameters, lr=self.transformer_learning_rate)      
 
         if not self.finetune:
             min_lr = [1e-5, 1e-5, 1e-8, 1e-8, 1e-7, 1e-7]
@@ -173,21 +179,15 @@ class NBMEModel(pl.LightningModule):
 
     def monitor_metrics(self, outputs, targets, attention_masks, token_type_ids):
         outputs = torch.squeeze(outputs, dim=-1)
-        outputs[outputs < 0.5] = 0
-        outputs[outputs > 0.5] = 1
-        outputs = outputs.long()
-        targets = targets.long()
+        
 
         outputs = torch.masked_select(outputs, attention_masks)
         targets = torch.masked_select(targets, attention_masks)
 
-        mask = targets != -1
-        outputs = torch.masked_select(outputs, mask).cpu().detach().numpy()
-        targets = torch.masked_select(targets, mask).cpu().detach().numpy()
 
-        f1 = f1_score(outputs, targets)
+        #f1 = f1_score(outputs, targets)
         return {
-                "f1": f1,
+                #"f1": f1,
                 "outputs": outputs,
                 "targets": targets
                 }
@@ -225,8 +225,9 @@ class NBMEModel(pl.LightningModule):
             loss4 = self.loss(logits4, targets, attention_mask=attention_mask)
             loss5 = self.loss(logits5, targets, attention_mask=attention_mask)
             loss = (loss1 + loss2 + loss3 + loss4 + loss5) / 5
-            
-        metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)
+            metric = None
+        else:
+            metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)
         
         return {
             "preds": probs,
@@ -238,8 +239,8 @@ class NBMEModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         output = self(**batch)
         loss = output["loss"]
-        f1 = output["metric"]["f1"]
-        self.log('train/f1', f1, on_step=True, on_epoch=True, prog_bar=True)
+        #f1 = output["metric"]["f1"]
+        #self.log('train/f1', f1, on_step=True, on_epoch=True, prog_bar=True)
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
         return loss
@@ -255,7 +256,14 @@ class NBMEModel(pl.LightningModule):
                 }
 
     def validation_epoch_end(self, outputs) -> None:
-        preds = np.concatenate([output["outputs"] for output in outputs])
-        grounds = np.concatenate([output["targets"] for output in outputs])
-        f1 = f1_score(preds, grounds)
+        preds = torch.cat([output["outputs"] for output in outputs])
+        grounds = torch.cat([output["targets"] for output in outputs])
+        preds[preds < 0.5] = 0
+        preds[preds > 0.5] = 1
+        preds = preds.long()
+        grounds = grounds.long()
+        mask = grounds != -1
+        preds = torch.masked_select(preds, mask)
+        grounds = torch.masked_select(grounds, mask)
+        f1 = f1_score(preds, grounds, average=None, num_classes=2)[1]
         self.log('valid/f1', f1, on_epoch=True)
