@@ -123,7 +123,7 @@ class NBMEModel(pl.LightningModule):
             else:
                 other_param_optimizer.append((name, para))
                 
-        other_lr = self.transformer_learning_rate * 100
+        other_lr = self.transformer_learning_rate * 1
         
         self.optimizer_grouped_parameters = []
         for idx, layer in enumerate(transformer_param_optimizer):
@@ -177,7 +177,7 @@ class NBMEModel(pl.LightningModule):
         loss = torch.masked_select(loss, targets != -1).mean()
         return loss
 
-    def monitor_metrics(self, outputs, targets, attention_masks, token_type_ids):
+    def monitor_metrics(self, outputs, targets, attention_masks):
         outputs = torch.squeeze(outputs, dim=-1)
         
 
@@ -227,7 +227,7 @@ class NBMEModel(pl.LightningModule):
             loss = (loss1 + loss2 + loss3 + loss4 + loss5) / 5
             metric = None
         else:
-            metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask, token_type_ids=token_type_ids)
+            metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask)
         
         return {
             "preds": probs,

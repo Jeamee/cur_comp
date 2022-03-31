@@ -15,7 +15,10 @@ def prepare_input(tokenizer, max_len, text, feature_text):
                       )
     for key, val in inputs.items():
         inputs[key] = torch.squeeze(val)
-    inputs["token_type_ids"] = torch.logical_not(inputs["token_type_ids"].byte())
+    
+    if "token_type_ids" in inputs:
+        inputs["token_type_ids"] = torch.logical_not(inputs["token_type_ids"].byte())
+        
     inputs["attention_mask"] = inputs["attention_mask"].byte()
     
     return inputs
