@@ -1,26 +1,3 @@
-import shutil
-from pathlib import Path
-
-transformers_path = Path("/opt/conda/lib/python3.8/site-packages/transformers")
-
-input_dir = Path("../src/deberta-v2-3-fast-tokenizer")
-
-convert_file = input_dir / "convert_slow_tokenizer.py"
-conversion_path = transformers_path/convert_file.name
-
-if conversion_path.exists():
-    conversion_path.unlink()
-
-shutil.copy(convert_file, transformers_path)
-deberta_v2_path = transformers_path / "models" / "deberta_v2"
-
-for filename in ['tokenization_deberta_v2.py', 'tokenization_deberta_v2_fast.py']:
-    filepath = deberta_v2_path/filename
-    if filepath.exists():
-        filepath.unlink()
-
-    shutil.copy(input_dir/filename, filepath)
-
 import gc
 gc.enable()
 
@@ -118,10 +95,7 @@ if __name__ == "__main__":
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
 
-    if args.model in ["microsoft/deberta-v3-large", "microsoft/deberta-v2-xlarge"] or "dbv3" in args.model:
-        tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
         
     if args.add_return_token:
         tokenizer.add_tokens("\n", special_tokens=True)

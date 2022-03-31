@@ -8,6 +8,7 @@ from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode
 
 
 import re
+import bitsandbytes as bnb
 import pytorch_lightning as pl
 import torch.nn as nn
 import numpy as np
@@ -99,7 +100,6 @@ class NBMEModel(pl.LightningModule):
                 self.crf = CRF(num_tags=num_labels, batch_first=True)
         
         if loss == "ce":
-            #self.loss_layer = nn.CrossEntropyLoss(label_smoothing=label_smooth)
             self.loss_layer = nn.BCEWithLogitsLoss(reduction="none")
         elif loss == "sce":
             self.loss_layer = SCELoss(sce_alpha, sce_beta, num_classes=num_labels if self.decoder != "span" else span_num_labels, label_smooth=label_smooth)
@@ -142,18 +142,16 @@ class NBMEModel(pl.LightningModule):
              "weight_decay": 0.0, 'lr': other_lr}
         ])
         
-        if not self.use_tpu:
-            import bitsandbytes as bnb
-            opt = bnb.optim.AdamW8bit(self.optimizer_grouped_parameters, lr=self.transformer_learning_rate)
 
-            for module in self.modules():
-                if isinstance(module, nn.Embedding):
-                    bnb.optim.GlobalOptimManager.get_instance().register_module_override(
-                        module, 'weight', {'optim_bits': 32}
-                    )
-        else:
-            opt = AdamW(self.optimizer_grouped_parameters, lr=self.transformer_learning_rate)      
+            
+        opt = bnb.optim.AdamW8bit(self.optimizer_grouped_parameters, lr=self.transformer_learning_rate)
 
+        for module in self.modules():
+            if isinstance(module, nn.Embedding):
+                bnb.optim.GlobalOptimManager.get_instance().register_module_override(
+                    module, 'weight', {'optim_bits': 32}
+                )
+                
         if not self.finetune:
             min_lr = [1e-5, 1e-5, 1e-8, 1e-8, 1e-7, 1e-7]
             patience = 10
