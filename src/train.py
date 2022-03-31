@@ -30,8 +30,6 @@ from torch.utils.data import DataLoader
 from torch.nn import functional as F
 from torch.optim.lr_scheduler import StepLR, LinearLR
 from transformers import AdamW, AutoConfig, AutoModel, AutoTokenizer, get_cosine_schedule_with_warmup
-from transformers.models.deberta_v2.tokenization_deberta_v2_fast import DebertaV2TokenizerFast
-from pytorchcrf import CRF
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
