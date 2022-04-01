@@ -177,13 +177,11 @@ class NBMEModel(pl.LightningModule):
 
     def monitor_metrics(self, outputs, targets, attention_masks):
         outputs = torch.squeeze(outputs, dim=-1)
+        attention_masks = attention_masks.byte()
         
-
         outputs = torch.masked_select(outputs, attention_masks)
         targets = torch.masked_select(targets, attention_masks)
 
-
-        #f1 = f1_score(outputs, targets)
         return {
                 #"f1": f1,
                 "outputs": outputs,
