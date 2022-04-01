@@ -180,7 +180,7 @@ class NBMEModel(pl.LightningModule):
         attention_masks = attention_masks.byte()
         
         outputs = torch.masked_select(outputs, attention_masks)
-        targets = torch.masked_select(targets, attention_masks)
+        targets = torch.masked_select(targets, attention_masks[:len(targets)])
 
         return {
                 #"f1": f1,
