@@ -167,23 +167,26 @@ class NBMEModel(pl.LightningModule):
         return opt
     
     def loss(self, outputs, targets, attention_mask):
-        attention_mask = attention_mask.view(-1)
-        outputs = outputs.view(-1, self.num_labels)[attention_mask]
+        attention_mask = attention_mask.byte()[:, :targets.shape[1]]
+        outputs = outputs[:, :targets.shape[1], :]
+        attention_mask = attention_mask.reshape(-1)
+        
+        outputs = outputs.reshape(-1, self.num_labels)[attention_mask]
         targets = targets.view(-1, self.num_labels)[attention_mask]
-
         loss = self.loss_layer(outputs, targets)
         loss = torch.masked_select(loss, targets != -1).mean()
         return loss
 
     def monitor_metrics(self, outputs, targets, attention_masks):
         outputs = torch.squeeze(outputs, dim=-1)
-        attention_masks = attention_masks.byte()
+        attention_masks = attention_masks.byte()[:, :targets.shape[1]]
+        outputs = outputs[:, :targets.shape[1]]
+        
         
         outputs = torch.masked_select(outputs, attention_masks)
-        targets = torch.masked_select(targets, attention_masks[:len(targets)])
+        targets = torch.masked_select(targets, attention_masks)
 
         return {
-                #"f1": f1,
                 "outputs": outputs,
                 "targets": targets
                 }
@@ -235,8 +238,6 @@ class NBMEModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         output = self(**batch)
         loss = output["loss"]
-        #f1 = output["metric"]["f1"]
-        #self.log('train/f1', f1, on_step=True, on_epoch=True, prog_bar=True)
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
         return loss

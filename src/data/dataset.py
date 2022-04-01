@@ -16,7 +16,7 @@ def prepare_input(tokenizer, text, feature_text):
         inputs[key] = torch.squeeze(val)
     
     if "token_type_ids" in inputs:
-        inputs["token_type_ids"] = torch.logical_not(inputs["token_type_ids"].byte())
+        inputs["token_type_ids"] = torch.logical_not(inputs["token_type_ids"].byte()).long()
         
     inputs["attention_mask"] = inputs["attention_mask"]
     
@@ -75,6 +75,6 @@ class TrainDataset(Dataset):
 def collate_fn(batch):
     output = dict()
     for key, val in batch[0].items():
-        output[key] = pad_sequence([torch.tensor(sample[key], dtype=torch.long) for sample in batch], batch_first=True)
+        output[key] = pad_sequence([torch.tensor(sample[key]) for sample in batch], batch_first=True)
     
     return output

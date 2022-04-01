@@ -109,6 +109,7 @@ if __name__ == "__main__":
             shuffle=True,
             num_workers=4,
             pin_memory=True,
+            collate_fn=collate_fn
             )
     valid_dataset = DataLoader(
             TrainDataset(tokenizer, valid_df),
