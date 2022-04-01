@@ -5,11 +5,9 @@ import numpy as np
 import torch
 
 
-def prepare_input(tokenizer, max_len, text, feature_text):
+def prepare_input(tokenizer, text, feature_text):
     inputs = tokenizer(text, feature_text,
                            add_special_tokens=True,
-                           max_length=max_len,
-                           padding="max_length",
                            return_offsets_mapping=False,
                            return_tensors="pt"
                       )
@@ -24,11 +22,9 @@ def prepare_input(tokenizer, max_len, text, feature_text):
     return inputs
 
 
-def create_label(tokenizer, max_len, text, annotation_length, location_list):
+def create_label(tokenizer, text, annotation_length, location_list):
     encoded = tokenizer(text,
                             add_special_tokens=True,
-                            max_length=max_len,
-                            padding="max_length",
                             return_offsets_mapping=True)
     offset_mapping = encoded['offset_mapping']
     ignore_idxes = np.where(np.array(encoded.sequence_ids()) != 0)[0]
@@ -53,9 +49,8 @@ def create_label(tokenizer, max_len, text, annotation_length, location_list):
 
 
 class TrainDataset(Dataset):
-    def __init__(self, tokenizer, max_len, df):
+    def __init__(self, tokenizer, df):
         self.tokenizer = tokenizer
-        self.max_len = max_len
         self.feature_texts = df['feature_text'].values
         self.pn_historys = df['pn_history'].values
         self.annotation_lengths = df['annotation_length'].values
@@ -66,13 +61,19 @@ class TrainDataset(Dataset):
 
     def __getitem__(self, item):
         inputs = prepare_input(self.tokenizer, 
-                self.max_len,
                 self.pn_historys[item], 
                 self.feature_texts[item])
         label = create_label(self.tokenizer, 
-                self.max_len,
                 self.pn_historys[item], 
                 self.annotation_lengths[item], 
                 self.locations[item])
         inputs["targets"] = label
         return inputs
+
+
+def collate_fn(batch):
+    output = dict()
+    for key, val in batch[0].items():
+        output[key] = pad_sequence([torch.tensor(sample[key], dtype=torch.long) for sample in batch], batch_first=True)
+    
+    return output

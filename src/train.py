@@ -37,7 +37,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode, Freeze
 from model.model import NBMEModel
-from data.dataset import TrainDataset
+from data.dataset import TrainDataset, collate_fn
 from loss.dice_loss import DiceLoss
 from loss.focal_loss import FocalLoss
 from loss.sce import SCELoss
@@ -95,39 +95,28 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
         
-    if args.add_return_token:
-        tokenizer.add_tokens("\n", special_tokens=True)
-        tokenizer.save_pretrained(args.output)
-
-    for text_col in ['pn_history']:
-        pn_history_lengths = []
-        tk0 = tqdm(df[text_col].fillna("").values, total=len(df))
-        for text in tk0:
-            length = len(tokenizer(text, add_special_tokens=False)['input_ids'])
-            pn_history_lengths.append(length)
-
-    for text_col in ['feature_text']:
-        features_lengths = []
-        tk0 = tqdm(df[text_col].fillna("").values, total=len(df))
-        for text in tk0:
-            length = len(tokenizer(text, add_special_tokens=False)['input_ids'])
-            features_lengths.append(length)
-
-    args.max_len = max(pn_history_lengths) + max(features_lengths) + 3 # cls & sep & sep
+    tokenizer.add_tokens([
+        "\n", "ros", "fh", "fhx", "shx", "phi" "pshx",
+        "fmhx", "psh", "hx", "pmh", "nka", "nkda",
+        "rx", "lmp", "etoh", "sob", "c/o", "alls",
+        "hpi", "f/u", "htn", "rlq", "llq", "ruq", "luq"
+        ], special_tokens=True)
+    tokenizer.save_pretrained(args.output)
    
     train_dataset = DataLoader(
-            TrainDataset(tokenizer, args.max_len, train_df),
+            TrainDataset(tokenizer, train_df),
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=3,
+            num_workers=4,
             pin_memory=True,
             )
     valid_dataset = DataLoader(
-            TrainDataset(tokenizer, args.max_len, valid_df),
+            TrainDataset(tokenizer, valid_df),
             batch_size=args.valid_batch_size,
             shuffle=False,
-            num_workers=3,
+            num_workers=4,
             pin_memory=True,
+            collate_fn=collate_fn
             )
 
     num_train_steps = int(len(train_dataset) / args.batch_size / args.accumulation_steps * args.epochs)
@@ -162,7 +151,7 @@ if __name__ == "__main__":
     if args.ckpt:
         model.load(args.ckpt, weights_only=True, strict=False)
 
-    early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=12, verbose=True, mode="max")
+    early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=15, verbose=True, mode="max")
     model_ckpt_callback = ModelCheckpoint(
             dirpath=args.output,
             monitor="valid/f1",
