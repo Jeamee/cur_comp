@@ -144,9 +144,7 @@ if __name__ == "__main__":
         lr_decay=args.lr_decay,
     )
     
-
-    if args.add_return_token:
-        model.transformer.resize_token_embeddings(len(tokenizer))
+    model.transformer.resize_token_embeddings(len(tokenizer))
     
     if args.ckpt:
         model.load(args.ckpt, weights_only=True, strict=False)
