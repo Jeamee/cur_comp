@@ -212,7 +212,7 @@ class NBMEModel(pl.LightningModule):
         logits3 = self.output(self.dropout3(sequence_output))
         logits4 = self.output(self.dropout4(sequence_output))
         logits5 = self.output(self.dropout5(sequence_output))
-        logits = self.output(sequence_output)
+        logits = (logits1 + logits2 + logits3 + logtis4 + logtis5) / 5
 
         probs = torch.sigmoid(logits)
         loss = 0

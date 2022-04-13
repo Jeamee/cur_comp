@@ -73,7 +73,7 @@ def parse_args():
     parser.add_argument("--freeze", type=int, default=10, required=False)
     parser.add_argument("--freeze_method", type=str, default="hard", required=False)
     parser.add_argument("--gradient_ckpt", action="store_true", required=False)
-    parser.add_argument("--clip_grad_norm", type=float, default=1.0, required=False)
+    parser.add_argument("--clip_grad_norm", type=float, default=10.0, required=False)
     parser.add_argument("--lr_decay", type=float, default=1.0, required=False)
     parser.add_argument("--add_return_token", action="store_true", required=False)
 
@@ -95,13 +95,13 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
         
-    tokenizer.add_tokens([
-        "\n", "ros", "fh", "fhx", "shx", "phi" "pshx",
-        "fmhx", "psh", "hx", "pmh", "nka", "nkda",
-        "rx", "lmp", "etoh", "sob", "c/o", "alls",
-        "hpi", "f/u", "htn", "rlq", "llq", "ruq", "luq"
-        ], special_tokens=True)
-    tokenizer.save_pretrained(args.output)
+    #tokenizer.add_tokens([
+    #    "\n", "ros", "fh", "fhx", "shx", "phi" "pshx",
+    #    "fmhx", "psh", "hx", "pmh", "nka", "nkda",
+    #    "rx", "lmp", "etoh", "sob", "c/o", "alls",
+    #    "hpi", "f/u", "htn", "rlq", "llq", "ruq", "luq"
+    #    ], special_tokens=True)
+    #tokenizer.save_pretrained(args.output)
    
     train_dataset = DataLoader(
             TrainDataset(tokenizer, train_df),
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     if args.ckpt:
         model.load(args.ckpt, weights_only=True, strict=False)
 
-    early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=15, verbose=True, mode="max")
+    early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=20, verbose=True, mode="max")
     model_ckpt_callback = ModelCheckpoint(
             dirpath=args.output,
             monitor="valid/f1",
