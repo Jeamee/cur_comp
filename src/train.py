@@ -1,3 +1,26 @@
+import shutil
+from pathlib import Path
+
+transformers_path = Path("/opt/conda/lib/python3.7/site-packages/transformers")
+
+input_dir = Path("../src/deberta-v2-3-fast-tokenizer")
+
+convert_file = input_dir / "convert_slow_tokenizer.py"
+conversion_path = transformers_path/convert_file.name
+
+if conversion_path.exists():
+    conversion_path.unlink()
+
+shutil.copy(convert_file, transformers_path)
+deberta_v2_path = transformers_path / "models" / "deberta_v2"
+
+for filename in ['tokenization_deberta_v2.py', 'tokenization_deberta_v2_fast.py']:
+    filepath = deberta_v2_path/filename
+    if filepath.exists():
+        filepath.unlink()
+
+    shutil.copy(input_dir/filename, filepath)
+
 import gc
 gc.enable()
 
@@ -33,6 +56,7 @@ from transformers import AdamW, AutoConfig, AutoModel, AutoTokenizer, get_cosine
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
+from transformers.models.deberta_v2.tokenization_deberta_v2_fast import DebertaV2TokenizerFast
 
 
 from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode, Freeze
@@ -92,8 +116,11 @@ if __name__ == "__main__":
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    
+    if "deberta" in args.model.lower():
+        tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
         
     #tokenizer.add_tokens([
     #    "\n", "ros", "fh", "fhx", "shx", "phi" "pshx",
