@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-if Path("/opt/conda/lib/python3.7/site-packages/transformers").exist():
+if Path("/opt/conda/lib/python3.7/site-packages/transformers").exists():
     transformers_path = Path("/opt/conda/lib/python3.7/site-packages/transformers")
 else:
     transformers_path = Path("/opt/conda/lib/python3.8/site-packages/transformers")
