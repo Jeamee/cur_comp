@@ -1,7 +1,10 @@
 import shutil
 from pathlib import Path
 
-transformers_path = Path("/opt/conda/lib/python3.7/site-packages/transformers")
+if Path("/opt/conda/lib/python3.7/site-packages/transformers").exist_ok():
+    transformers_path = Path("/opt/conda/lib/python3.7/site-packages/transformers")
+else:
+    transformers_path = Path("/opt/conda/lib/python3.8/site-packages/transformers")
 
 input_dir = Path("../src/deberta-v2-3-fast-tokenizer")
 
