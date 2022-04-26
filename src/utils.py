@@ -429,4 +429,13 @@ class ReduceLROnPlateau(object):
         self.__dict__.update(state_dict)
         self._init_is_better(mode=self.mode, threshold=self.threshold, threshold_mode=self.threshold_mode)
 
-         
+def process_feature_text(text):
+    text = re.sub('I-year', '1-year', text)
+    text = re.sub('-OR-', " or ", text)
+    text = re.sub('-', ' ', text)
+    return text
+
+def clean_spaces(txt):
+    txt = re.sub('\t', ' ', txt)
+    txt = re.sub('\r', ' ', txt)
+    return txt
