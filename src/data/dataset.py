@@ -9,7 +9,7 @@ import torch
 def prepare_input(tokenizer, text, feature_text):
     inputs = tokenizer(text, feature_text,
                            add_special_tokens=True,
-                           return_offsets_mapping=,
+                           return_offsets_mapping=False,
                            return_tensors="pt"
                       )
     for key, val in inputs.items():
@@ -23,7 +23,7 @@ def prepare_input(tokenizer, text, feature_text):
     return inputs
 
 
-def create_label(tokenizer, text, annotation_length, location_list):
+def create_label(tokenizer, text, feature_text, annotation_length, location_list):
     encoded = tokenizer(text, feature_text,
                             add_special_tokens=True,
                             return_offsets_mapping=True)
@@ -34,7 +34,7 @@ def create_label(tokenizer, text, annotation_length, location_list):
     label[ignore_idxes] = -100
     label[question_idxes[1:]] = 1
     label[question_idxes[0]] = 2
-    sequence_mask = torco.tensor(np.where(np.array(encoded.sequence_ids()) == 0)[0], dtype=torch.bool)
+    sequence_mask = torch.tensor(np.array(encoded.sequence_ids()) == 0, dtype=torch.bool)
 
     if annotation_length != 0:
         for location in location_list:
@@ -52,7 +52,7 @@ def create_label(tokenizer, text, annotation_length, location_list):
                 if (start_idx != -1) & (end_idx != -1):
                     label[start_idx] = 2
                     label[start_idx + 1:end_idx] = 1
-    return torch.tensor(label, dtype=torch.float), sequence_mask
+    return torch.tensor(label, dtype=torch.long), sequence_mask
 
 
 class TrainDataset(Dataset):
@@ -72,10 +72,12 @@ class TrainDataset(Dataset):
                 self.feature_texts[item])
         label, sequence_mask = create_label(self.tokenizer, 
                 self.pn_historys[item], 
+                self.feature_texts[item],
                 self.annotation_lengths[item], 
                 self.locations[item])
         inputs["targets"] = label
         inputs["sequence_mask"] = sequence_mask
+        assert len(inputs["input_ids"]) == len(sequence_mask)
         return inputs
 
 
@@ -84,6 +86,8 @@ def collate_fn(batch):
     for key, val in batch[0].items():
         if key == "targets":
             padding_value = -100
+        elif key == "sequence_mask":
+            padding_value = False
         else:
             padding_value = 0
         output[key] = pad_sequence([torch.tensor(sample[key]) for sample in batch], batch_first=True, padding_value=padding_value)

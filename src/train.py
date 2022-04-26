@@ -123,11 +123,12 @@ if __name__ == "__main__":
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
+    print(valid_df.iloc[3].location)
     
     if "deberta-v" in args.model.lower():
-        tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
+        tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model, do_lower_case=True)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        tokenizer = AutoTokenizer.from_pretrained(args.model, do_lower_case=True)
         
     if args.add_return_token:                                                                                                                                                               
         if "deberta-xlarge" in args.model or "roberta" in args.model:                                                                                                                       

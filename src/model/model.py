@@ -167,13 +167,12 @@ class NBMEModel(pl.LightningModule):
     
     def loss(self, outputs, targets, attention_mask):
         outputs = outputs.view(-1, self.num_labels)
-        targets = targets.view(-1, self.num_labels)
+        targets = targets.view(-1)
         loss = self.loss_layer(outputs, targets)
         return loss
 
     def monitor_metrics(self, outputs, targets, sequence_mask):
         outputs = torch.argmax(outputs, dim=-1)
-        
         outputs = torch.masked_select(outputs, sequence_mask)
         targets = torch.masked_select(targets, sequence_mask)
 
@@ -247,12 +246,10 @@ class NBMEModel(pl.LightningModule):
     def validation_epoch_end(self, outputs) -> None:
         preds = torch.cat([output["outputs"] for output in outputs])
         grounds = torch.cat([output["targets"] for output in outputs])
-        preds[preds < 0.5] = 0
-        preds[preds > 0.5] = 1
         preds = preds.long()
         grounds = grounds.long()
-        mask = grounds != -1
-        preds = torch.masked_select(preds, mask)
-        grounds = torch.masked_select(grounds, mask)
-        f1 = f1_score(preds, grounds, average=None, num_classes=2)[1]
-        self.log('valid/f1', f1, on_epoch=True)
+        preds[preds == 2] = 1
+        grounds[grounds == 2] = 1
+        f1 = f1_score(preds, grounds, average=None, num_classes=2)
+        print(f1)
+        self.log('valid/f1', f1[1], on_epoch=True)
