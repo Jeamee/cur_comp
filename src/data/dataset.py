@@ -9,7 +9,7 @@ import torch
 def prepare_input(tokenizer, text, feature_text):
     inputs = tokenizer(text, feature_text,
                            add_special_tokens=True,
-                           return_offsets_mapping=False,
+                           return_offsets_mapping=,
                            return_tensors="pt"
                       )
     for key, val in inputs.items():
@@ -24,13 +24,18 @@ def prepare_input(tokenizer, text, feature_text):
 
 
 def create_label(tokenizer, text, annotation_length, location_list):
-    encoded = tokenizer(text,
+    encoded = tokenizer(text, feature_text,
                             add_special_tokens=True,
                             return_offsets_mapping=True)
     offset_mapping = encoded['offset_mapping']
-    ignore_idxes = np.where(np.array(encoded.sequence_ids()) != 0)[0]
+    ignore_idxes = np.where(np.array(encoded.sequence_ids()) == None)[0]
+    question_idxes = np.where(np.array(encoded.sequence_ids()) == 1)[0]
     label = np.zeros(len(offset_mapping))
-    label[ignore_idxes] = -1
+    label[ignore_idxes] = -100
+    label[question_idxes[1:]] = 1
+    label[question_idxes[0]] = 2
+    sequence_mask = torco.tensor(np.where(np.array(encoded.sequence_ids()) == 0)[0], dtype=torch.bool)
+
     if annotation_length != 0:
         for location in location_list:
             for loc in [s.split() for s in location.split(';')]:
@@ -45,8 +50,9 @@ def create_label(tokenizer, text, annotation_length, location_list):
                 if start_idx == -1:
                     start_idx = end_idx
                 if (start_idx != -1) & (end_idx != -1):
-                    label[start_idx:end_idx] = 1
-    return torch.tensor(label, dtype=torch.float)
+                    label[start_idx] = 2
+                    label[start_idx + 1:end_idx] = 1
+    return torch.tensor(label, dtype=torch.float), sequence_mask
 
 
 class TrainDataset(Dataset):
@@ -64,17 +70,22 @@ class TrainDataset(Dataset):
         inputs = prepare_input(self.tokenizer, 
                 self.pn_historys[item], 
                 self.feature_texts[item])
-        label = create_label(self.tokenizer, 
+        label, sequence_mask = create_label(self.tokenizer, 
                 self.pn_historys[item], 
                 self.annotation_lengths[item], 
                 self.locations[item])
         inputs["targets"] = label
+        inputs["sequence_mask"] = sequence_mask
         return inputs
 
 
 def collate_fn(batch):
     output = dict()
     for key, val in batch[0].items():
-        output[key] = pad_sequence([torch.tensor(sample[key]) for sample in batch], batch_first=True)
+        if key == "targets":
+            padding_value = -100
+        else:
+            padding_value = 0
+        output[key] = pad_sequence([torch.tensor(sample[key]) for sample in batch], batch_first=True, padding_value=padding_value)
     
     return output

@@ -99,8 +99,10 @@ class NBMEModel(pl.LightningModule):
             if self.decoder == "crf":
                 self.crf = CRF(num_tags=num_labels, batch_first=True)
         
-        if loss == "ce":
+        if loss == "bce":
             self.loss_layer = nn.BCEWithLogitsLoss(reduction="none")
+        if loss == "ce":
+            self.loss_layer = nn.CrossEntropyLoss(label_smoothing=label_smooth)
         elif loss == "sce":
             self.loss_layer = SCELoss(sce_alpha, sce_beta, num_classes=num_labels if self.decoder != "span" else span_num_labels, label_smooth=label_smooth)
         else:
@@ -153,9 +155,6 @@ class NBMEModel(pl.LightningModule):
                 )
                 
         if not self.finetune:
-            min_lr = [1e-5, 1e-5, 1e-8, 1e-8, 1e-7, 1e-7]
-            patience = 10
-
             sch = GradualWarmupScheduler(
                 opt,
                 multiplier=1.1,
@@ -167,31 +166,23 @@ class NBMEModel(pl.LightningModule):
         return opt
     
     def loss(self, outputs, targets, attention_mask):
-        attention_mask = attention_mask.byte()[:, :targets.shape[1]]
-        outputs = outputs[:, :targets.shape[1], :]
-        attention_mask = attention_mask.reshape(-1)
-        
-        outputs = outputs.reshape(-1, self.num_labels)[attention_mask]
-        targets = targets.view(-1, self.num_labels)[attention_mask]
+        outputs = outputs.view(-1, self.num_labels)
+        targets = targets.view(-1, self.num_labels)
         loss = self.loss_layer(outputs, targets)
-        loss = torch.masked_select(loss, targets != -1).mean()
         return loss
 
-    def monitor_metrics(self, outputs, targets, attention_masks):
-        outputs = torch.squeeze(outputs, dim=-1)
-        attention_masks = attention_masks.byte()[:, :targets.shape[1]]
-        outputs = outputs[:, :targets.shape[1]]
+    def monitor_metrics(self, outputs, targets, sequence_mask):
+        outputs = torch.argmax(outputs, dim=-1)
         
-        
-        outputs = torch.masked_select(outputs, attention_masks)
-        targets = torch.masked_select(targets, attention_masks)
+        outputs = torch.masked_select(outputs, sequence_mask)
+        targets = torch.masked_select(targets, sequence_mask)
 
         return {
                 "outputs": outputs,
                 "targets": targets
                 }
 
-    def forward(self, input_ids, attention_mask, token_type_ids=None, targets=None):
+    def forward(self, input_ids, attention_mask, token_type_ids=None, targets=None, sequence_mask=None):
         if token_type_ids is not None:
             transformer_out = self.transformer(input_ids, attention_mask, token_type_ids, output_hidden_states=self.dynamic_merge_layers)
         else:
@@ -214,19 +205,20 @@ class NBMEModel(pl.LightningModule):
         logits5 = self.output(self.dropout5(sequence_output))
         logits = (logits1 + logits2 + logits3 + logits4 + logits5) / 5
 
-        probs = torch.sigmoid(logits)
+        #probs = torch.sigmoid(logits)
+        probs = torch.softmax(logits, dim=-1)
         loss = 0
         
         if self.training:
-            loss1 = self.loss(logits1, targets, attention_mask=attention_mask)
-            loss2 = self.loss(logits2, targets, attention_mask=attention_mask)
-            loss3 = self.loss(logits3, targets, attention_mask=attention_mask)
-            loss4 = self.loss(logits4, targets, attention_mask=attention_mask)
-            loss5 = self.loss(logits5, targets, attention_mask=attention_mask)
+            loss1 = self.loss(torch.softmax(logits1, dim=-1), targets, attention_mask=attention_mask)
+            loss2 = self.loss(torch.softmax(logits2, dim=-1), targets, attention_mask=attention_mask)
+            loss3 = self.loss(torch.softmax(logits3, dim=-1), targets, attention_mask=attention_mask)
+            loss4 = self.loss(torch.softmax(logits4, dim=-1), targets, attention_mask=attention_mask)
+            loss5 = self.loss(torch.softmax(logits5, dim=-1), targets, attention_mask=attention_mask)
             loss = (loss1 + loss2 + loss3 + loss4 + loss5) / 5
             metric = None
         else:
-            metric = self.monitor_metrics(probs, targets, attention_masks=attention_mask)
+            metric = self.monitor_metrics(probs, targets, sequence_mask=sequence_mask)
         
         return {
             "preds": probs,

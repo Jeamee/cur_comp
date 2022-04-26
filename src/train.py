@@ -62,7 +62,7 @@ from pytorch_lightning.loggers import WandbLogger
 from transformers.models.deberta_v2.tokenization_deberta_v2_fast import DebertaV2TokenizerFast
 
 
-from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode, Freeze
+from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode, Freeze, process_feature_text, clean_spaces
 from model.model import NBMEModel
 from data.dataset import TrainDataset, collate_fn
 from loss.dice_loss import DiceLoss
@@ -116,22 +116,33 @@ if __name__ == "__main__":
     df = pd.read_csv(args.input_csv)
     df['annotation'] = df['annotation'].apply(ast.literal_eval)
     df['location'] = df['location'].apply(ast.literal_eval)
+    df['pn_history'] = df['pn_history'].apply(lambda x: x.strip())
+    df['feature_text'] = df['feature_text'].apply(process_feature_text)
+    df['feature_text'] = df['feature_text'].apply(clean_spaces)
+    df['clean_text'] = df['pn_history'].apply(clean_spaces)
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
     
-    if "deberta" in args.model.lower():
+    if "deberta-v" in args.model.lower():
         tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model)
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model)
         
-    #tokenizer.add_tokens([
-    #    "\n", "ros", "fh", "fhx", "shx", "phi" "pshx",
-    #    "fmhx", "psh", "hx", "pmh", "nka", "nkda",
-    #    "rx", "lmp", "etoh", "sob", "c/o", "alls",
-    #    "hpi", "f/u", "htn", "rlq", "llq", "ruq", "luq"
-    #    ], special_tokens=True)
-    #tokenizer.save_pretrained(args.output)
+    if args.add_return_token:                                                                                                                                                               
+        if "deberta-xlarge" in args.model or "roberta" in args.model:                                                                                                                       
+            special_tokens = ["fh", "fhx", "shx", "pshx", "psh", "hx", "pmh", "nka", "nkda", "lmp", "etoh", "c/o", "hpi", "htn", "rlq"]                                                     
+        elif "electra" in args.model:                                                                                                                                                       
+            special_tokens = ["\n", "ros","fh", "fhx", "shx", "pshx", "psh", "hx", "pmh", "nka", "nkda", "lmp", "etoh", "c/o", "hpi", "htn", "rlq"]                                         
+        elif "deberta-v2" in args.model:                                                                                                                                                    
+            special_tokens = ["\n", "fh", "fhx", "shx", "pshx", "psh", "hx", "pmh", "nka", "nkda", "lmp", "etoh", "sob", "c/o", "hpi", "htn", "rlq"]                                        
+        elif "deberta-v3" in args.model:                                                                                                                                                    
+            special_tokens = ["\n", "fh", "fhx", "shx", "pshx", "psh", "hx", "pmh", "nka", "nkda", "lmp", "etoh", "c/o", "hpi", "htn", "rlq"]                                               
+        else:                                                                                                                                                                               
+            raise ValueError("没有设定需要添加哪些token")                                                                                                                                   
+        # special_tokens = ["\n", "ros", "fh", "fhx", "shx", "pshx", "psh", "hx", "pmh", "nka", "nkda", "lmp", "etoh", "sob", "c/o", "hpi", "htn", "rlq"]                                   
+        tokenizer.add_tokens(special_tokens, special_tokens=args.new_special_token)                                                                                                         
+        tokenizer.save_pretrained(args.output)              
    
     train_dataset = DataLoader(
             TrainDataset(tokenizer, train_df),
@@ -152,7 +163,7 @@ if __name__ == "__main__":
 
     num_train_steps = int(len(train_dataset) / args.batch_size / args.accumulation_steps * args.epochs)
     
-    num_labels = 1
+    num_labels = 3
     span_num_labels = 2
     model = NBMEModel(
         max_len=args.max_len,
@@ -175,7 +186,8 @@ if __name__ == "__main__":
         lr_decay=args.lr_decay,
     )
     
-    model.transformer.resize_token_embeddings(len(tokenizer))
+    if args.add_return_token: 
+        model.transformer.resize_token_embeddings(len(tokenizer))
     
     if args.ckpt:
         model.load(args.ckpt, weights_only=True, strict=False)
