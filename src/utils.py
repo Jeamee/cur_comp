@@ -2,6 +2,7 @@ import copy
 import os
 import logging
 import sys
+import re
 sys.path.append("/workspace/tez")
 
 import numpy as np

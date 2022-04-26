@@ -103,6 +103,7 @@ def parse_args():
     parser.add_argument("--clip_grad_norm", type=float, default=10.0, required=False)
     parser.add_argument("--lr_decay", type=float, default=1.0, required=False)
     parser.add_argument("--add_return_token", action="store_true", required=False)
+    parser.add_argument("--process_feature_text", action="store_true", required=False)
 
     
     return parser.parse_args()
@@ -117,9 +118,10 @@ if __name__ == "__main__":
     df['annotation'] = df['annotation'].apply(ast.literal_eval)
     df['location'] = df['location'].apply(ast.literal_eval)
     df['pn_history'] = df['pn_history'].apply(lambda x: x.strip())
-    df['feature_text'] = df['feature_text'].apply(process_feature_text)
     df['feature_text'] = df['feature_text'].apply(clean_spaces)
     df['clean_text'] = df['pn_history'].apply(clean_spaces)
+    if args.process_feature_text:
+        df['feature_text'] = df['feature_text'].apply(process_feature_text)
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
