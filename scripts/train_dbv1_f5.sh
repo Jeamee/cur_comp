@@ -3,10 +3,10 @@ DATE=0426
 DECODER=softmax
 BS=8
 MAX_LEN=512
-MODEL="microsoft/deberta-v3-large"
+MODEL="microsoft/deberta-xlarge"
 
 
-for FOLD in 2 3 4;do
+for FOLD in 0 1 2 3 4;do
 DESC=norm-$FOLD
 python ../src/train.py --fold $FOLD --model $MODEL --decoder $DECODER --warmup_ratio 0.05 \
  --trans_lr 1e-5 --epochs 6 --max_len $MAX_LEN --batch_size $BS --valid_batch_size 32 \
