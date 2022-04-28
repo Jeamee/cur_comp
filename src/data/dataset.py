@@ -7,6 +7,9 @@ import torch
 
 
 def prepare_input(tokenizer, text, feature_text):
+    if "roberta" in tokenizer.name_or_path:
+        feature_text = (tokenizer.sep_token + " ") * 2 + feature_text
+        
     inputs = tokenizer(text, feature_text,
                            add_special_tokens=True,
                            return_offsets_mapping=False,
