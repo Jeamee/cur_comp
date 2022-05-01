@@ -113,6 +113,9 @@ if __name__ == "__main__":
         pseudo = shuffle(pseudo)
         train_df = pd.concat([train_df, pseudo], axis=0)
     
+    train_df['pn_history'] = train_df['pn_history'].apply(clean_spaces)
+    valid_df['pn_history'] = valid_df['pn_history'].apply(clean_spaces)
+    
     if "deberta-v" in args.model.lower():
         tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model, do_lower_case=True)
     else:
