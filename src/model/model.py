@@ -158,7 +158,7 @@ class NBMEModel(pl.LightningModule):
             sch = get_linear_schedule_with_warmup(
                 opt,
                 num_warmup_steps=warmup_steps,
-                num_training_steps=elf.num_train_steps
+                num_training_steps=self.num_train_steps
             )
             #sch = GradualWarmupScheduler(
             #    opt,
