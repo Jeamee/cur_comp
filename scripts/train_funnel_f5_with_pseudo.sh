@@ -3,7 +3,7 @@ DATE=0501
 DECODER=softmax
 BS=32
 MAX_LEN=512
-MODEL="google/electra-large-discriminator"
+MODEL="funnel-transformer/xlarge"
 
 for FOLD in 0 1 2 3 4;do
 DESC=pseudo-$FOLD
