@@ -446,3 +446,26 @@ def get_int_or_float_val(string):
     if "." in string:
         return float(string)
     return int(string)
+
+
+def shuffle(df):
+    if "kfold" in df:
+        del df["kfold"]
+    df = df.sample(frac=1, random_state=43).reset_index(drop=True)
+    not_null, null = [], []
+    for row in df.itertuples(index=False):
+        row = list(row)[1:]
+        if row[4]:
+            not_null.append(row)
+        else:
+            null.append(row)
+    result = []
+    for idx in range(1, len(pseudo) + 1):
+        if idx % 3 == 0 and null:
+            result.append(null.pop())
+        else:
+            if not_null:
+                result.append(not_null.pop())
+
+    new_df = pd.DataFrame(result, columns = ["pn_num", "case_num", "pn_history", "feature_text", "feature_num", "len", "id", "location"])
+    return new_df

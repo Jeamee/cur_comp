@@ -44,7 +44,7 @@ from pytorch_lightning.loggers import WandbLogger
 from transformers.models.deberta_v2.tokenization_deberta_v2_fast import DebertaV2TokenizerFast
 
 
-from utils import Freeze, process_feature_text, clean_spaces, get_int_or_float_val
+from utils import Freeze, process_feature_text, clean_spaces, get_int_or_float_val, shuffle
 from model.model import NBMEModel
 from data.dataset import TrainDataset, collate_fn
 
@@ -106,11 +106,11 @@ if __name__ == "__main__":
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
-    train_df = train_df.sample(frac=1, random_state=43).reset_index(drop=True)
+    train_df = shuffle(train_df)
 
     if args.pseudo_csv:
         pseudo = pd.read_pickle(args.pseudo_csv)
-        pseudo = pseudo.sample(frac=1, random_state=43).reset_index(drop=True)
+        pseudo = shuffle(pseudo)
         train_df = pd.concat([train_df, pseudo], axis=0)
     
     if "deberta-v" in args.model.lower():
