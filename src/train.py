@@ -100,7 +100,7 @@ if __name__ == "__main__":
     df['location'] = df['location'].apply(ast.literal_eval)
     df['pn_history'] = df['pn_history'].apply(lambda x: x.strip())
     df['feature_text'] = df['feature_text'].apply(clean_spaces)
-    df['clean_text'] = df['pn_history'].apply(clean_spaces)
+
     if args.process_feature_text:
         df['feature_text'] = df['feature_text'].apply(process_feature_text)
 
