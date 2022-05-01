@@ -451,11 +451,12 @@ def get_int_or_float_val(string):
 def shuffle(df):
     if "kfold" in df:
         del df["kfold"]
+
     df = df.sample(frac=1, random_state=43).reset_index(drop=True)
     not_null, null = [], []
     for row in df.itertuples(index=False):
-        row = list(row)[1:]
-        if row[4]:
+        row = list(row)
+        if row[5]:
             not_null.append(row)
         else:
             null.append(row)
@@ -467,5 +468,5 @@ def shuffle(df):
             if not_null:
                 result.append(not_null.pop())
 
-    new_df = pd.DataFrame(result, columns = ["pn_num", "case_num", "pn_history", "feature_text", "feature_num", "len", "id", "location"])
+    new_df = pd.DataFrame(result, columns = ["id", "case_num", "pn_num", "feature_num", "annotation", "location", "feature_text", "pn_history", "annotation_length"])
     return new_df
