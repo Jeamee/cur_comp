@@ -103,14 +103,14 @@ if __name__ == "__main__":
 
     if args.process_feature_text:
         df['feature_text'] = df['feature_text'].apply(process_feature_text)
-
+    seed = [12, 42, 43, 1024, 2022][args.fold]
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
-    train_df = shuffle(train_df)
+    train_df = shuffle(train_df, seed=seed)
 
     if args.pseudo_csv:
         pseudo = pd.read_pickle(args.pseudo_csv)
-        pseudo = shuffle(pseudo)
+        pseudo = shuffle(pseudo, seed=seed)
         train_df = pd.concat([train_df, pseudo], axis=0)
     
     train_df['pn_history'] = train_df['pn_history'].apply(clean_spaces)

@@ -450,11 +450,11 @@ def get_int_or_float_val(string):
     return int(string)
 
 
-def shuffle(df):
+def shuffle(df, seed=43):
     if "kfold" in df:
         del df["kfold"]
 
-    df = df.sample(frac=1, random_state=43).reset_index(drop=True)
+    df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
     not_null, null = [], []
     for row in df.itertuples(index=False):
         row = list(row)
