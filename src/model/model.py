@@ -1,10 +1,8 @@
-from transformers import AutoModel, AutoConfig, AdamW
-from utils import Freeze
+from transformers import AutoModel, AutoConfig
 from pytorchcrf import CRF
 from loss.sce import SCELoss
-#from sklearn.metrics import f1_score
 from torchmetrics.functional import f1_score
-from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode
+from utils import GradualWarmupScheduler
 
 
 import re
@@ -23,7 +21,6 @@ class NBMEModel(pl.LightningModule):
         transformer_learning_rate,
         num_labels,
         span_num_labels,
-        steps_per_epoch,
         dynamic_merge_layers,
         loss="ce",
         sce_alpha=1.0,
@@ -36,7 +33,6 @@ class NBMEModel(pl.LightningModule):
         lr_decay=1.,
         finetune=False,
         gradient_ckpt=False,
-        max_position_embeddings=None,
         use_tpu=False
     ):
         super().__init__()
@@ -153,13 +149,15 @@ class NBMEModel(pl.LightningModule):
                 )
                 
         if not self.finetune:
-            min_lr = [1e-5, 1e-5, 1e-8, 1e-8, 1e-7, 1e-7]
-            patience = 10
+            if isinstance(self.warmup_ratio, float):
+                warmup_steps = int(self.warmup_ratio * self.num_train_steps)
+            else:
+                warmup_steps = self.warmup_ratio
 
             sch = GradualWarmupScheduler(
                 opt,
                 multiplier=1.1,
-                warmup_epoch=int(self.warmup_ratio * self.num_train_steps) ,
+                warmup_epoch=warmup_steps ,
                 total_epoch=self.num_train_steps)
             
             return [opt], [sch]

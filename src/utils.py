@@ -440,3 +440,9 @@ def clean_spaces(txt):
     txt = re.sub('\t', ' ', txt)
     txt = re.sub('\r', ' ', txt)
     return txt
+
+
+def get_int_or_float_val(string):
+    if "." in string:
+        return float(string)
+    return int(string)

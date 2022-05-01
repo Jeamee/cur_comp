@@ -27,47 +27,26 @@ for filename in ['tokenization_deberta_v2.py', 'tokenization_deberta_v2_fast.py'
 import gc
 gc.enable()
 
-import sys
 import ast
 import argparse
 import os
-import random
 import warnings
-import logging
-import time
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import numpy as np
 import pandas as pd
-pd.set_option('display.max_rows', 500)
-pd.set_option('display.max_columns', 500)
-pd.set_option('display.width', 1000)
-import torch
-import torch.nn as nn
-import bitsandbytes as bnb
 import pytorch_lightning as pl
 
-from tqdm import tqdm
-from math import ceil
-from copy import deepcopy
-from sklearn import metrics
-from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
-from torch.nn import functional as F
-from torch.optim.lr_scheduler import StepLR, LinearLR
-from transformers import AdamW, AutoConfig, AutoModel, AutoTokenizer, get_cosine_schedule_with_warmup
+from transformers import AutoTokenizer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from transformers.models.deberta_v2.tokenization_deberta_v2_fast import DebertaV2TokenizerFast
 
 
-from utils import GradualWarmupScheduler, ReduceLROnPlateau, span_decode, Freeze, process_feature_text, clean_spaces
+from utils import Freeze, process_feature_text, clean_spaces, get_int_or_float_val
 from model.model import NBMEModel
 from data.dataset import TrainDataset, collate_fn
-from loss.dice_loss import DiceLoss
-from loss.focal_loss import FocalLoss
-from loss.sce import SCELoss
 
 
 warnings.filterwarnings("ignore")
@@ -85,6 +64,7 @@ def parse_args():
     parser.add_argument("--finetune", action="store_true", required=False)
     parser.add_argument("--output", type=str, default="../model", required=False)
     parser.add_argument("--input_csv", type=str, default="", required=True)
+    parser.add_argument("--pseudo_csv", type=str, default="", required=True)
     parser.add_argument("--ckpt", type=str, default="", required=False)
     parser.add_argument("--max_len", type=int, default=510, required=False)
     parser.add_argument("--batch_size", type=int, default=8, required=False)
@@ -104,6 +84,7 @@ def parse_args():
     parser.add_argument("--lr_decay", type=float, default=1.0, required=False)
     parser.add_argument("--add_return_token", action="store_true", required=False)
     parser.add_argument("--process_feature_text", action="store_true", required=False)
+    parser.add_argument("--val_check_interval", type=get_int_or_float_val, default=0.25, required=False)
 
     
     return parser.parse_args()
@@ -125,12 +106,16 @@ if __name__ == "__main__":
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
+
+    if args.pseudo_csv:
+        pseudo = pd.read_pickle(args.pseudo_csv)
+        train_df = pd.concat([train_df, pseudo], axis=0)
     
     if "deberta-v" in args.model.lower():
         tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model, do_lower_case=True)
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model, do_lower_case=True)
-        
+    
     if args.add_return_token:                                                                                                                                                               
         if "deberta-xlarge" in args.model or "roberta" in args.model:                                                                                                                       
             special_tokens = ["fh", "fhx", "shx", "pshx", "psh", "hx", "pmh", "nka", "nkda", "lmp", "etoh", "c/o", "hpi", "htn", "rlq"]                                                     
@@ -177,7 +162,6 @@ if __name__ == "__main__":
         merge_layers_num=args.merge_layers_num,
         num_labels=num_labels,
         span_num_labels=span_num_labels,
-        steps_per_epoch=len(train_dataset) / args.batch_size,
         loss=args.loss,
         sce_alpha=args.sce_alpha,
         sce_beta=args.sce_beta,
@@ -224,7 +208,7 @@ if __name__ == "__main__":
             log_every_n_steps=5,
             enable_progress_bar=True,
             max_epochs=args.epochs,
-            val_check_interval=0.25,
+            val_check_interval=args.val_check_interval,
             callbacks=[freeze, model_ckpt_callback, early_stop_callback]
             )
 
