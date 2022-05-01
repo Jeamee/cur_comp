@@ -468,6 +468,6 @@ def shuffle(df):
         else:
             if not_null:
                 result.append(not_null.pop())
-    print(result[0])
+    print("row", len(result[0]))
     new_df = pd.DataFrame(result, columns = ["id", "case_num", "pn_num", "feature_num", "annotation", "location", "feature_text", "pn_history", "annotation_length"])
     return new_df
