@@ -106,9 +106,11 @@ if __name__ == "__main__":
 
     train_df = df[df["kfold"] != args.fold].reset_index(drop=True)
     valid_df = df[df["kfold"] == args.fold].reset_index(drop=True)
+    train_df = train_df.sample(frac=1, random_state=43).reset_index(drop=True)
 
     if args.pseudo_csv:
         pseudo = pd.read_pickle(args.pseudo_csv)
+        pseudo = pseudo.sample(frac=1, random_state=43).reset_index(drop=True)
         train_df = pd.concat([train_df, pseudo], axis=0)
     
     if "deberta-v" in args.model.lower():
@@ -135,8 +137,8 @@ if __name__ == "__main__":
     train_dataset = DataLoader(
             TrainDataset(tokenizer, train_df),
             batch_size=args.batch_size,
-            shuffle=True,
-            num_workers=4,
+            shuffle=False,
+            num_workers=6,
             pin_memory=True,
             collate_fn=collate_fn
             )
@@ -144,7 +146,7 @@ if __name__ == "__main__":
             TrainDataset(tokenizer, valid_df),
             batch_size=args.valid_batch_size,
             shuffle=False,
-            num_workers=4,
+            num_workers=6,
             pin_memory=True,
             collate_fn=collate_fn
             )
