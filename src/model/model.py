@@ -3,6 +3,7 @@ from pytorchcrf import CRF
 from loss.sce import SCELoss
 from torchmetrics.functional import f1_score
 from utils import GradualWarmupScheduler
+from transformers import get_linear_schedule_with_warmup
 
 
 import re
@@ -154,11 +155,16 @@ class NBMEModel(pl.LightningModule):
             else:
                 warmup_steps = self.warmup_ratio
 
-            sch = GradualWarmupScheduler(
+            sch = get_linear_schedule_with_warmup(
                 opt,
-                multiplier=1.1,
-                warmup_epoch=warmup_steps ,
-                total_epoch=self.num_train_steps)
+                num_warmup_steps=warmup_steps,
+                num_training_steps=elf.num_train_steps
+            )
+            #sch = GradualWarmupScheduler(
+            #    opt,
+            #    multiplier=1.1,
+            #    warmup_epoch=warmup_steps ,
+            #    total_epoch=self.num_train_steps)
             
             return [opt], [sch]
 
