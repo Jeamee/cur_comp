@@ -460,7 +460,7 @@ def shuffle(df):
         else:
             null.append(row)
     result = []
-    for idx in range(1, len(pseudo) + 1):
+    for idx in range(1, len(df) + 1):
         if idx % 3 == 0 and null:
             result.append(null.pop())
         else:
