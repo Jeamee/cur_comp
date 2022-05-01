@@ -452,6 +452,7 @@ def shuffle(df):
     if "kfold" in df:
         del df["kfold"]
 
+    print(df.columns)
     df = df.sample(frac=1, random_state=43).reset_index(drop=True)
     not_null, null = [], []
     for row in df.itertuples(index=False):
