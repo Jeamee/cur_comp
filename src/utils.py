@@ -439,6 +439,7 @@ def process_feature_text(text):
 def clean_spaces(txt):
     txt = re.sub('\t', ' ', txt)
     txt = re.sub('\r', ' ', txt)
+    txt = re.sub('\n', ' ', txt)
     return txt
 
 
