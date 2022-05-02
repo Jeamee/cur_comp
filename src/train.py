@@ -181,7 +181,7 @@ if __name__ == "__main__":
         model.transformer.resize_token_embeddings(len(tokenizer))
     
     if args.ckpt:
-        model.load(args.ckpt, weights_only=True, strict=False)
+        model.load_from_checkpoint(args.ckpt, map_location="cuda")
 
     early_stop_callback = EarlyStopping(monitor="valid/f1", min_delta=0.00, patience=20, verbose=True, mode="max")
     model_ckpt_callback = ModelCheckpoint(
